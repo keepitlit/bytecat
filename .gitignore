@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.ndjson
+*.db
+*.db-wal
+*.db-shm
+work.json
+reports/
+.venv/
+build/
+*.egg-info/

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bytecat"
+version = "0.1.0"
+description = "A catalogue of every file on every drive you own, by content hash, built and queried entirely on your own hardware."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Keep It Lit Software Inc." }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["dedup", "backup", "catalog", "nas", "local-first", "content-hash"]
+classifiers = [
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Archiving",
+  "Topic :: System :: Filesystems",
+]
+
+[project.urls]
+Homepage = "https://github.com/keepitlit/bytecat"
+
+[project.scripts]
+bytecat = "bytecat.cli:main"
+
+[tool.setuptools]
+packages = ["bytecat"]
+
+[tool.setuptools.package-data]
+bytecat = ["schema.sql"]
