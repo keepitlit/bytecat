@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -27,7 +28,8 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
 EMBED_MODEL = os.environ.get("BYTECAT_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 # The chat model used by tier 4 (`enrich`) and `ask --smart`. There is no
 # default: set BYTECAT_CHAT_MODEL to whatever your server has loaded.
-# `ensure_up()` reports the mismatch if it is stale.
+# Nothing checks it against the server's list; a stale name fails on the first
+# chat request.
 CHAT_MODEL = os.environ.get("BYTECAT_CHAT_MODEL", "")
 # Set BYTECAT_LLM_AUTOSTART=1 to let `ensure_up()` run `lms server start`
 # (LM Studio only). Off by default: a public tool should not launch apps.
@@ -42,13 +44,35 @@ class LMStudioDown(RuntimeError):
     pass
 
 
+def failure_reason(e: BaseException) -> str:
+    """What to print when a model or Chroma call fails.
+
+    bytecat's own errors (LocalOnlyError, LMStudioDown and the RuntimeErrors
+    raised here and in chroma.py) carry a message that names the cause and the
+    fix. Anything else -- a KeyError or JSONDecodeError from a malformed reply --
+    prints its class name, because str(KeyError('data')) is just "'data'".
+    """
+    if isinstance(e, RuntimeError) and str(e):
+        return str(e)
+    return type(e).__name__
+
+
+_NOTED: set[str] = set()
+
+
+def note_once(line: str) -> None:
+    """Print a fallback notice to stderr once per process: `eval` runs many
+    searches, and one reason repeated per query buries the scoreboard."""
+    if line not in _NOTED:
+        _NOTED.add(line)
+        print(line, file=sys.stderr)
+
+
 def _assert_local(url: str) -> None:
     host = urlparse(url).hostname or ""
     if host not in LOOPBACK:
-        raise LocalOnlyError(
-            f"refusing non-loopback endpoint {host!r}. bytecat only talks to a local "
-            "model; this is a hard invariant, not a default."
-        )
+        # A hard invariant, not a default: no setting relaxes it.
+        raise LocalOnlyError(f"refusing non-loopback model endpoint {host!r}")
 
 
 class _LocalOnlyRedirects(urllib.request.HTTPRedirectHandler):
@@ -108,14 +132,14 @@ class LMStudio:
             # HTTPError MUST be caught before URLError -- it is a subclass, and
             # catching the parent first makes every 4xx look like a dead server.
             except urllib.error.HTTPError as e:
-                detail = e.read()[:300]
-                raise RuntimeError(f"LM Studio {e.code} on {path}: {detail!r}") from e
+                detail = e.read()[:300].decode(errors="replace")
+                raise RuntimeError(f"model server {e.code} on {path}: {detail}") from e
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 last = e
                 # A model being JIT-loaded can take a while on the first call.
                 time.sleep(2 * (attempt + 1))
 
-        raise LMStudioDown(f"{url} unreachable after {retries} tries: {last}")
+        raise LMStudioDown(f"{url} unreachable: {last}")
 
     # -- lifecycle --------------------------------------------------------
 
@@ -144,22 +168,26 @@ class LMStudio:
             return models
         if autostart is None:
             autostart = AUTOSTART
+        # "or model": models() also returns [] for a running server that lists
+        # no models, so the message cannot tell the two apart.
         if not autostart:
             raise LMStudioDown(
-                f"no model server at {self.base}. Start one (LM Studio, Ollama, "
-                f"llama-server ...) or point BYTECAT_LLM_BASE at it.")
+                f"no model server or model at {self.base}; "
+                f"start one or set BYTECAT_LLM_BASE")
 
         lms = os.path.expanduser("~/.lmstudio/bin/lms")
-        if os.path.exists(lms):
-            subprocess.run([lms, "server", "start"], capture_output=True, timeout=60)
-            for _ in range(10):
-                time.sleep(2)
-                models = self.models()
-                if models:
-                    return models
+        if not os.path.exists(lms):
+            raise LMStudioDown(f"no model server or model at {self.base}; {lms} not found")
+        r = subprocess.run([lms, "server", "start"], capture_output=True, timeout=60)
+        for _ in range(10):
+            time.sleep(2)
+            models = self.models()
+            if models:
+                return models
+        err = (r.stderr or b"").decode(errors="replace").strip()
         raise LMStudioDown(
-            f"could not reach or start LM Studio at {self.base}. "
-            f"Try: {lms} server start"
+            f"still no model server or model at {self.base} after {lms} server start"
+            + (f": {err}" if err else "")
         )
 
     # -- inference --------------------------------------------------------
@@ -187,9 +215,7 @@ class LMStudio:
         """
         model = model or CHAT_MODEL
         if not model:
-            raise LMStudioDown(
-                "no chat model configured: set BYTECAT_CHAT_MODEL to a model your "
-                "server has loaded (see `bytecat status` or your server's /v1/models)")
+            raise LMStudioDown(f"BYTECAT_CHAT_MODEL not set; pick one from {self.base}/models")
         payload: dict[str, Any] = {
             "model": model,
             "messages": [

@@ -5,7 +5,8 @@ server already runs on :8100, and the same local-only invariant applies here as
 to the model endpoint.
 
 Chroma holds vectors and a little metadata for filtering. It is derived state --
-if this server disappears, `embed.py` rebuilds it from the catalog.
+if this server disappears, `bytecat embed --reset` rebuilds it from the catalog,
+for files on volumes mounted at the time.
 """
 
 from __future__ import annotations
@@ -66,9 +67,13 @@ class Chroma:
             with _OPENER.open(req, timeout=60) as r:
                 body = r.read()
                 return json.loads(body) if body else None
+        # HTTPError before URLError: it is a subclass.
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"chroma {method} {path} -> {e.code}: "
-                               f"{e.read()[:300]!r}") from e
+            detail = e.read()[:300].decode(errors="replace")
+            raise RuntimeError(f"Chroma {e.code}: {detail}") from e
+        except urllib.error.URLError as e:
+            # Nothing listening: say where it was looked for, not the class name.
+            raise RuntimeError(f"no Chroma at {self.base}") from e
 
     @property
     def _root(self) -> str:
