@@ -15,7 +15,7 @@ the WRONG blob. That is true with the inode cache and equally true without it --
 the relpath cache in db.upsert_files has always had it -- and the assertion below
 is what stops that being quietly attributed to this change.
 """
-import os, shutil, subprocess, sys, tempfile, time
+import os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,11 @@ def env_for(home):
 
 
 def cycle(home, src, *hash_args):
-    """scan -> merge -> hash. Returns (rows, hash stderr, returncode)."""
+    """scan -> merge -> hash. Returns (rows, hash stderr, returncode, counts).
+
+    counts are the hash summary's numbers in order: hashed, reused (inherited
+    by inode), need no read, unreadable. Read by position, so the checks hold
+    the counts and not the sentence."""
     env = env_for(home)
     s = subprocess.run([sys.executable, "-m", "bytecat.scan", str(src), "--host", "h",
                         "--volume-uuid", "u-1"], cwd=ROOT, env=env,
@@ -51,7 +55,14 @@ def cycle(home, src, *hash_args):
                    input=s.stdout, capture_output=True, text=True)
     h = subprocess.run([sys.executable, "-m", "bytecat.hash", *hash_args],
                        cwd=ROOT, env=env, capture_output=True, text=True)
-    return dump(home), h.stderr, h.returncode
+    return dump(home), h.stderr, h.returncode, summary_counts(h.stdout)
+
+
+def summary_counts(out):
+    for line in out.splitlines():
+        if line.startswith("[bytecat] hashed"):
+            return [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", line)]
+    return [None] * 4
 
 
 def dump(home):
@@ -77,7 +88,7 @@ try:
     home = tmp / "home"
     src = tmp / "src"
     seed(src)
-    base, base_err, rc = cycle(home, src)
+    base, base_err, rc, _ = cycle(home, src)
     check("baseline run", rc == 0, base_err[-300:])
     check("identical files share one blob",
           base["dupA.bin"][1] is not None and base["dupA.bin"][1] == base["dupB.bin"][1],
@@ -93,7 +104,7 @@ try:
     os.rename(src / "uniq.bin", src / "sub" / "uniq.bin")
     os.link(src / "dupB.bin", src / "hard.bin")
 
-    moved, moved_err, rc = cycle(home, src)
+    moved, moved_err, rc, moved_n = cycle(home, src)
     check("rename run", rc == 0, moved_err[-300:])
 
     check("moved file KEPT its blob without being read",
@@ -101,15 +112,14 @@ try:
           f"{moved.get('sub/dupA.bin')} vs {original_blob}")
     check("hardlink adopted the blob too",
           moved["hard.bin"][1] == original_blob, f"{moved.get('hard.bin')}")
-    check("nothing was read from disk", "nothing to hash" in moved_err,
-          moved_err[-300:])
+    check("nothing was read from disk", moved_n[0] == 0, f"{moved_n}")
 
     # Exactly two adoptions: the moved duplicate and the hardlink. The moved
     # size-unique file must NOT be adopted -- its donor row carries
     # (blob_id NULL, t1_hashed 1), which is a claim about the catalog's current
     # population, not a fingerprint.
     check("adoption count is 2, not 3 -- the size-unique donor was refused",
-          "inode cache: 2 moved/renamed files" in moved_err, moved_err[-300:])
+          moved_n[1] == 2, f"{moved_n}")
     check("moved size-unique file still has no blob",
           moved["sub/uniq.bin"] == (True, None), f"{moved.get('sub/uniq.bin')}")
 
@@ -122,18 +132,17 @@ try:
     os.rename(src2 / "dupA.bin", src2 / "sub" / "dupA.bin")
     os.rename(src2 / "uniq.bin", src2 / "sub" / "uniq.bin")
     os.link(src2 / "dupB.bin", src2 / "hard.bin")
-    nocache, nocache_err, rc = cycle(home2, src2, "--no-inode-cache")
+    nocache, nocache_err, rc, nocache_n = cycle(home2, src2, "--no-inode-cache")
 
     check("--no-inode-cache run", rc == 0, nocache_err[-300:])
     check("the two modes genuinely disagree about the WORK",
-          "size-collision candidates" in nocache_err and "nothing to hash" in moved_err,
-          f"nocache={nocache_err[-200:]}")
+          (nocache_n[0] or 0) > 0 and moved_n[0] == 0,
+          f"nocache={nocache_n} cache={moved_n}")
     check("...and agree about the ANSWER",
           (nocache["sub/dupA.bin"][1] == nocache["dupB.bin"][1] == nocache["hard.bin"][1])
           and (moved["sub/dupA.bin"][1] == moved["dupB.bin"][1] == moved["hard.bin"][1]),
           f"nocache={nocache} cache={moved}")
-    check("--no-inode-cache reports no adoptions",
-          "inode cache:" not in nocache_err, nocache_err[-200:])
+    check("--no-inode-cache reports no adoptions", nocache_n[1] == 0, f"{nocache_n}")
 
     # ------------------------------------------- the stale-mtime hazard, pinned
     # Rewrite the bytes at the SAME size and put the mtime back. This is what
@@ -146,24 +155,26 @@ try:
         os.utime(target, (st.st_atime, st.st_mtime))  # ...and the same mtime
 
     stale_rewrite(src)
-    stale, _, rc = cycle(home, src)
+    stale, _, rc, _ = cycle(home, src)
     check("stale-mtime file still claims the OLD blob (known hazard)",
           stale["dupB.bin"][1] == original_blob, f"{stale.get('dupB.bin')}")
 
     stale_rewrite(src2)
-    stale2, _, rc = cycle(home2, src2, "--no-inode-cache")
+    stale2, _, rc, _ = cycle(home2, src2, "--no-inode-cache")
     check("--no-inode-cache is wrong in EXACTLY the same way "
           "(the hazard is the relpath cache, not this change)",
           stale2["dupB.bin"][1] == nocache["dupB.bin"][1],
           f"{stale2.get('dupB.bin')} vs {nocache.get('dupB.bin')}")
 
     # --forget is the escape hatch, and it must actually fix it.
-    forgot, forgot_err, rc = cycle(home, src, "--forget", "--volume", "u-1")
+    forgot, forgot_err, rc, _ = cycle(home, src, "--forget", "--volume", "u-1")
     check("--forget run", rc == 0, forgot_err[-300:])
     check("--forget re-read the bytes and split the blob",
           forgot["dupB.bin"][1] != forgot["sub/dupA.bin"][1],
           f"dupB={forgot.get('dupB.bin')} dupA={forgot.get('sub/dupA.bin')}")
-    check("--forget announced itself", "--forget: cleared tier-1 state" in forgot_err,
+    # It clears every row on the volume, the 2 missing donors included: 4 + 2.
+    check("--forget reports the 6 rows it cleared",
+          any(re.findall(r"\d+", line) == ["6"] for line in forgot_err.splitlines()),
           forgot_err[-200:])
 
     # --forget without --volume is refused: it would re-read every mounted volume.

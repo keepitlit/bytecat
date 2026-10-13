@@ -23,7 +23,7 @@ from . import db
 BATCH = 5000
 
 
-def _records(stream: TextIO) -> Iterator[dict]:
+def _records(stream: TextIO, stats: dict) -> Iterator[dict]:
     for line in stream:
         line = line.strip()
         if not line:
@@ -31,7 +31,8 @@ def _records(stream: TextIO) -> Iterator[dict]:
         try:
             yield json.loads(line)
         except json.JSONDecodeError:
-            print(f"[bytecat] skipping malformed line", file=sys.stderr)
+            # Counted, and reported once after the summary.
+            stats["bad"] += 1
 
 
 def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
@@ -47,7 +48,7 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
     vol_uuid = ""
 
     batch: list[tuple] = []
-    stats = {"files": 0, "errors": 0, "volumes": 0, "missing": 0}
+    stats = {"files": 0, "errors": 0, "volumes": 0, "missing": 0, "bad": 0}
 
     # Opened up front so every row this merge writes carries the same stamp;
     # deletion detection is "rows on this volume that this run did not touch".
@@ -70,7 +71,7 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
 
     try:
         conn.execute("BEGIN")
-        for rec in _records(stream):
+        for rec in _records(stream, stats):
             kind = rec.get("type")
 
             if kind == "volume":
@@ -144,8 +145,16 @@ def main() -> int:
             stream.close()
 
     # Counts only -- never paths or content.
-    print(f"[bytecat] merged: {stats['files']:,} files across {stats['volumes']} volume(s); "
-          f"{stats['missing']:,} newly missing; {stats['errors']} scan errors")
+    if not stats["volumes"]:
+        print("[bytecat] no scan output in input")
+    else:
+        # Under --no-prune nothing is marked missing, so the count is not drawn.
+        missing = "" if args.no_prune else f"; {stats['missing']:,} now missing"
+        # errors are the scan's error records, which include unreadable folders.
+        print(f"[bytecat] merged {stats['files']:,} files, {stats['volumes']} volume(s)"
+              f"{missing}; {stats['errors']:,} paths unreadable")
+    if stats["bad"]:
+        print(f"[bytecat] skipped {stats['bad']:,} malformed lines")
     return 0
 
 

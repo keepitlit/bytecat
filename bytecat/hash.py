@@ -265,8 +265,14 @@ def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
         forget: bool = False) -> dict:
     vols = local_volumes(conn, only_volume)
     if not vols:
-        print("[bytecat] no locally-mounted volumes to hash "
-              "(use --emit-work for remote hosts)", file=sys.stderr)
+        if not conn.execute("SELECT 1 FROM volumes LIMIT 1").fetchone():
+            print("[bytecat] catalog is empty; run bytecat scan ROOT | bytecat merge first",
+                  file=sys.stderr)
+        elif only_volume:
+            print(f"[bytecat] no mounted volume with ID {only_volume}", file=sys.stderr)
+        else:
+            print("[bytecat] no catalogued volume is mounted here; "
+                  "remote hosts: --emit-work HOST", file=sys.stderr)
         return {}
 
     workers = workers or min(8, (os.cpu_count() or 4))
@@ -276,27 +282,19 @@ def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
 
     if forget:
         n = sum(forget_volume(conn, v) for v in vol_ids)
-        print(f"[bytecat] --forget: cleared tier-1 state on {n:,} rows; "
-              f"everything below will be measured again", file=sys.stderr)
+        # Everything on the volume is measured again below.
+        print(f"[bytecat] cleared fingerprints on {n:,} files", file=sys.stderr)
 
     # Stage -1 -- inherit fingerprints across renames, moves and hardlinks.
     # Runs BEFORE stage 0 so adopted rows drop out of the candidate set for free.
+    # The count is reported once, as "reused", in the summary.
     if inode_cache:
         stats["adopted"] = adopt_by_inode(conn, vol_ids)
-        if stats["adopted"]:
-            print(f"[bytecat] inode cache: {stats['adopted']:,} moved/renamed files "
-                  f"kept their fingerprint (no bytes read)", file=sys.stderr)
 
-    # Stage 0 -- free elimination.
-    n_sizes = build_dup_sizes(conn, all_sizes=hash_all)
+    # Stage 0 -- free elimination. Under --hash-all only symlinks and empty
+    # files are closed out; the summary reports them as "need no read".
+    build_dup_sizes(conn, all_sizes=hash_all)
     stats["skipped_unique"] = mark_unique_by_size(conn, vol_ids)
-    if hash_all:
-        print(f"[bytecat] stage 0 DISABLED (--hash-all): every file will be read; "
-              f"{stats['skipped_unique']:,} symlink/zero-byte closed out",
-              file=sys.stderr)
-    else:
-        print(f"[bytecat] stage 0: {stats['skipped_unique']:,} files unique by size "
-              f"(never opened); {n_sizes:,} colliding sizes remain", file=sys.stderr)
 
     # Stage 1+2. Files sharing a size are hashed quick AND full in one pass:
     # for a size-collision group we are almost certainly going to need the full
@@ -310,13 +308,12 @@ def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
             break
 
     if not jobs:
-        print("[bytecat] nothing to hash", file=sys.stderr)
+        # The summary line that follows already says 0 hashed.
         db.finish_run(conn, run_id, status="ok", n_seen=stats["skipped_unique"])
         refresh_fanout(conn)
         return stats
 
-    print(f"[bytecat] hashing {len(jobs):,} size-collision candidates "
-          f"on {workers} workers", file=sys.stderr)
+    print(f"[bytecat] hashing {len(jobs):,} files", file=sys.stderr)
 
     done = 0
     pending: list[tuple[int, str, str, int]] = []
@@ -377,39 +374,53 @@ def emit_work(conn, host: str, *, hash_all: bool = False,
                    "relpath": r["relpath"], "size": r["size_bytes"]} for r in rows]},
         sys.stdout,
     )
-    print(f"[bytecat] emitted {len(rows):,} jobs for {host}", file=sys.stderr)
+    if conn.execute("SELECT 1 FROM hosts WHERE name = ?", (host,)).fetchone():
+        print(f"[bytecat] {len(rows):,} files to hash on {host}", file=sys.stderr)
+    else:
+        print(f"[bytecat] no host named {host}", file=sys.stderr)
 
 
-def ingest(conn, path: str) -> int:
-    """Absorb NDJSON hash results produced by a remote host."""
+def ingest(conn, path: str) -> tuple[int, int]:
+    """Absorb NDJSON hash results produced by a remote host.
+
+    Returns (hashes ingested, hash_error records seen); the errors are files
+    the host could not read, which stay unhashed here.
+    """
     pending = []
+    n_err = 0
     with open(path) as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
             r = json.loads(line)
+            if r.get("type") == "hash_error":
+                n_err += 1
+                continue
             if r.get("type") != "hash":
                 continue
             pending.append((r["id"], r.get("quick"), r.get("full"), r["size"]))
     with db.transaction(conn):
         assign_blobs(conn, pending)
     refresh_fanout(conn)
-    return len(pending)
+    return len(pending), n_err
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat tier-1 hashing (read-only)")
+    ap = argparse.ArgumentParser(
+        description="hash file contents to find duplicates (tier 1)")
     ap.add_argument("--volume", default="", help="restrict to one volume UUID")
     ap.add_argument("--workers", type=int, default=0)
-    ap.add_argument("--limit", type=int, default=0, help="cap jobs (for testing)")
+    ap.add_argument("--limit", type=int, default=0, help="hash at most N files")
     ap.add_argument("--emit-work", metavar="HOST", default="")
     ap.add_argument("--hash-all", action="store_true",
-                    help="read every file; do not eliminate by unique size")
+                    help="also hash unique-size files; "
+                         "with --forget, already-skipped ones too")
     ap.add_argument("--no-inode-cache", action="store_true",
-                    help="do not inherit fingerprints across renames/moves")
+                    help="do not reuse fingerprints for moved, renamed "
+                         "or hard-linked files")
     ap.add_argument("--forget", action="store_true",
-                    help="clear tier-1 state for --volume first, forcing a re-read")
+                    help="clear --volume's fingerprints and hash it again")
     ap.add_argument("--ingest", metavar="NDJSON", default="")
     args = ap.parse_args()
 
@@ -420,8 +431,9 @@ def main() -> int:
                   only_volume=args.volume)
         return 0
     if args.ingest:
-        n = ingest(conn, args.ingest)
-        print(f"[bytecat] ingested {n:,} remote hashes")
+        n, n_err = ingest(conn, args.ingest)
+        unreadable = f"; {n_err:,} unreadable on the host" if n_err else ""
+        print(f"[bytecat] ingested {n:,} hashes{unreadable}")
         return 0
 
     if args.forget and not args.volume:
@@ -434,10 +446,12 @@ def main() -> int:
                 limit=args.limit, hash_all=args.hash_all,
                 inode_cache=not args.no_inode_cache, forget=args.forget)
     if stats:
-        print(f"[bytecat] hashed {stats['full']:,} files; "
-              f"{stats['adopted']:,} adopted by inode; "
-              f"{stats['skipped_unique']:,} skipped as unique-by-size; "
-              f"{stats['errors']} unreadable")
+        # reused = fingerprints inherited by inode (moves, renames, hard links);
+        # need no read = unique sizes, symlinks and empty files.
+        print(f"[bytecat] hashed {stats['full']:,}; "
+              f"reused {stats['adopted']:,}; "
+              f"{stats['skipped_unique']:,} need no read; "
+              f"{stats['errors']:,} unreadable")
     return 0
 
 

@@ -153,7 +153,8 @@ def volume_identity(root: str, forced: str = "", allow_marker: bool = False) -> 
                 info["uuid"] = new
                 eprint(f"[bytecat] wrote volume marker {marker_path}")
             except OSError as e:
-                eprint(f"[bytecat] could not write marker ({e}); using synthetic id")
+                eprint(f"[bytecat] could not write {marker_path} ({e}); "
+                       f"use --volume-uuid for a stable ID")
 
         if not info.get("uuid"):
             # Last resort: stable for this host+mount, but not across remounts
@@ -382,30 +383,32 @@ def run_hash_list(path: str, root_override: str = "",
         done += 1
         if progress_every and done % progress_every == 0:
             eprint(f"[bytecat] hashed {done:,}/{len(jobs):,}  {time.time()-t0:.0f}s")
-    eprint(f"[bytecat] hashed {done:,} files, {n_err:,} errors, "
-           f"{time.time()-t0:.0f}s")
+    # done counts unreadable files too; report the ones actually hashed.
+    eprint(f"[bytecat] hashed {done - n_err:,} files; {n_err:,} unreadable")
     return 0
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat portable scanner (read-only)")
+    ap = argparse.ArgumentParser(
+        description="list files under each root as NDJSON for bytecat merge")
     ap.add_argument("roots", nargs="*")
     ap.add_argument("--host", default=platform.node().split(".")[0])
     ap.add_argument("--volume-uuid", default="",
-                    help="force volume identity (useful for network shares)")
+                    help="set the volume ID (for network shares)")
     ap.add_argument("--allow-marker", action="store_true",
-                    help=f"permit writing a {MARKER} file to give a share a stable id")
+                    help=f"write a {MARKER} file at the volume root if it has no ID")
     ap.add_argument("--include-hidden", action="store_true")
     ap.add_argument("--descend-bundles", action="store_true",
-                    help="index inside .photoslibrary/.app/etc instead of "
-                         "recording each as a single entry")
+                    help="list the files inside bundles (.photoslibrary, .app, ...)")
     ap.add_argument("--min-size", type=int, default=1,
                     help="skip files smaller than this many bytes (default: skip empty)")
     ap.add_argument("--progress-every", type=int, default=20000)
     ap.add_argument("--hash-list", default="",
-                    help="hash the files in a work list from hash.py --emit-work")
+                    help="hash files listed by `bytecat hash --emit-work`; "
+                         "return the output to --ingest")
     ap.add_argument("--hash-root", default="",
-                    help="override each job's root (e.g. a container bind mount)")
+                    help="read the listed files under this directory "
+                         "instead of their catalogued root")
     args = ap.parse_args()
 
     if args.hash_list:
@@ -452,8 +455,8 @@ def main() -> int:
         "type": "summary", "host": args.host, "n_files": n_files,
         "n_errors": n_err, "elapsed": round(time.time() - t0, 1),
     }), flush=True)
-    eprint(f"[bytecat] done: {n_files:,} files, {n_err} errors, "
-           f"{time.time()-t0:.1f}s")
+    # n_err counts unreadable folders as one each, so they are paths, not files.
+    eprint(f"[bytecat] scanned {n_files:,} files; {n_err:,} paths unreadable")
     return 0
 
 

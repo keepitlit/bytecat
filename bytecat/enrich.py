@@ -225,19 +225,19 @@ def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:
     rows = candidates(conn, kinds, budget, vision)
     stats = {"seen": len(rows), "enriched": 0, "failed": 0}
     if not rows:
-        print("[bytecat] nothing ambiguous enough to enrich", file=sys.stderr)
+        print("[bytecat] nothing to enrich", file=sys.stderr)
         return stats
 
     run_id = db.start_run(conn, "enrich")
-    print(f"[bytecat] enriching {len(rows):,} files "
-          f"(budget {budget}, {'vision' if vision else 'text'})", file=sys.stderr)
+    print(f"[bytecat] enriching {len(rows):,} files", file=sys.stderr)
 
     for i, row in enumerate(rows, 1):
         try:
             result = enrich_image(lm, row) if vision else enrich_text(lm, row)
         except LMStudioDown:
-            print("[bytecat] LM Studio went away; stopping "
-                  "(progress is saved, re-run to continue)", file=sys.stderr)
+            # Rows done so far are already marked, so a re-run continues.
+            print(f"[bytecat] model server at {lm.base} stopped responding; "
+                  f"re-run to continue", file=sys.stderr)
             break
         except Exception as e:
             with db.transaction(conn):
@@ -275,12 +275,12 @@ def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="bytecat tier-4 LLM enrichment (local, budgeted)")
+        description="label files with a local model (tier 4)")
     ap.add_argument("--budget", type=int, default=200,
-                    help="maximum files to process this run (default 200)")
+                    help="at most N files (default 200)")
     ap.add_argument("--kinds", default="")
     ap.add_argument("--vision", action="store_true",
-                    help="describe images with the multimodal model")
+                    help="label images; BYTECAT_CHAT_MODEL must accept images")
     args = ap.parse_args()
 
     if args.budget <= 0:
@@ -288,11 +288,21 @@ def main() -> int:
         return 2
 
     conn = db.open_catalog()
-    s = run(conn, budget=args.budget,
-            kinds=[k for k in args.kinds.split(",") if k] or None,
-            vision=args.vision)
-    print(f"[bytecat] enriched {s['enriched']:,} of {s['seen']:,}; "
-          f"{s['failed']:,} produced nothing usable")
+    try:
+        s = run(conn, budget=args.budget,
+                kinds=[k for k in args.kinds.split(",") if k] or None,
+                vision=args.vision)
+    except RuntimeError as e:
+        # LMStudioDown and LocalOnlyError name what failed and what to do; print
+        # that line instead of a traceback. The exit code stays 1.
+        print(f"[bytecat] {e}", file=sys.stderr)
+        return 1
+    # Counted from the files actually tried: a stop part-way leaves the rest
+    # untried, and they are not failures.
+    if s["enriched"] or s["failed"]:
+        nxt = "; run bytecat embed next" if s["enriched"] else ""
+        print(f"[bytecat] labelled {s['enriched']:,}; "
+              f"{s['failed']:,} got no label{nxt}")
     return 0
 
 
