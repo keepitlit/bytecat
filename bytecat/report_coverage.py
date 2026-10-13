@@ -55,7 +55,10 @@ def resolve_volumes(conn, uuids: list[str], hosts: list[str]) -> list[int]:
             "SELECT v.id FROM volumes v JOIN hosts h ON h.id = v.host_id "
             "WHERE h.name = ?", (h,)).fetchall()
         if not r:
-            sys.exit(f"[bytecat] no volumes for host {h!r}")
+            names = [x["name"] for x in conn.execute(
+                "SELECT name FROM hosts ORDER BY name")]
+            known = f"; hosts: {', '.join(names)}" if names else ""
+            sys.exit(f"[bytecat] no volumes for host {h!r}{known}")
         ids += [x["id"] for x in r]
     return sorted(set(ids))
 
@@ -101,18 +104,29 @@ def classify(conn, src_vol: int, targets: list[int]) -> dict:
     return {"buckets": buckets, "missing_paths": missing_paths}
 
 
+def drive(conn, vol_id: int, *, with_uuid: bool) -> str:
+    """Host and label (or mount) of a volume, as a person knows the drive."""
+    v = conn.execute(
+        "SELECT h.name AS host, v.uuid, v.label, v.last_mount FROM volumes v "
+        "JOIN hosts h ON h.id = v.host_id WHERE v.id = ?", (vol_id,)).fetchone()
+    name = v["label"] or v["last_mount"] or ""
+    if with_uuid:
+        return f"{v['host']} {name} ({v['uuid']})" if name else f"{v['host']} ({v['uuid']})"
+    return f"{v['host']} {name or v['uuid']}"
+
+
 def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     b = res["buckets"]
     with out.open("w") as fh:
-        fh.write(f"# Coverage report\n\nSource: {src_label}\nTargets: {tgt_label}\n")
-        fh.write(f"Generated: {datetime.now():%Y-%m-%d %H:%M}\n\n")
-        fh.write("Content-hash set membership. Nothing was deleted or moved.\n\n")
+        # Blank lines between header lines: Markdown joins consecutive lines.
+        fh.write(f"# Coverage report, {datetime.now():%Y-%m-%d %H:%M}\n\n"
+                 f"Source: {src_label}\n\nTargets: {tgt_label}\n\n")
         for name, title in (
             ("present", "Confirmed present on a target (by content)"),
-            ("missing", "NOT on any target -- fully hashed, content confirmed absent"),
-            ("unique",  "NOT on any target -- proved by unique size, never read"),
-            ("unhashed", "No claim yet -- tier 1 has not reached these"),
+            ("missing", "NOT on any target (hashed)"),
+            ("unique",  "NOT on any target (by size, not read)"),
+            ("unhashed", "Unknown: not hashed"),
         ):
             folders = b.get(name, {})
             n = sum(v[0] for v in folders.values())
@@ -123,10 +137,16 @@ def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
                 for k, v in sorted(folders.items(), key=lambda kv: -kv[1][1]):
                     fh.write(f"| {k} | {v[0]:,} | {human(v[1])} |\n")
                 fh.write("\n")
-        fh.write("## Every file not found on a target\n\n")
+        fh.write("## Files not confirmed on a target\n\n")
+        if not res["missing_paths"]:
+            fh.write("None.\n")
+            return
         fh.write("| Path | Bytes | Why |\n|---|---:|---|\n")
+        why_words = {"missing": "hashed", "unique": "by size"}
         for p, s, why in sorted(res["missing_paths"], key=lambda x: -x[1]):
-            fh.write(f"| {p} | {s:,} | {why} |\n")
+            # A '|' in a name would split the row and shift the Why column.
+            cell = p.replace("|", "\\|")
+            fh.write(f"| {cell} | {s:,} | {why_words.get(why, why)} |\n")
 
 
 def main() -> int:
@@ -144,20 +164,27 @@ def main() -> int:
     targets = [v for v in resolve_volumes(conn, args.target_volume, args.target_host)
                if v != src[0]]
     if not targets:
-        sys.exit("[bytecat] no target volumes (and a volume cannot be its own target)")
+        sys.exit("[bytecat] give --target-host or --target-volume (not the source)")
 
     res = classify(conn, src[0], targets)
     out = Path(args.out) if args.out else (
         db.atlas_home() / "reports" / f"coverage-{datetime.now():%Y%m%d-%H%M}.md")
-    write_report(res, out, args.source_volume, ", ".join(map(str, targets)))
+    write_report(res, out, drive(conn, src[0], with_uuid=True),
+                 ", ".join(drive(conn, t, with_uuid=False) for t in targets))
 
+    # The answer first: what is not on a target, then what has no claim yet.
     b = res["buckets"]
-    for name in ("present", "missing", "unique", "unhashed"):
-        f = b.get(name, {})
-        print(f"[bytecat] {name:9s} {sum(v[0] for v in f.values()):>9,} files  "
-              f"{human(sum(v[1] for v in f.values())):>10s}")
+    def total(*names):
+        rows = [v for n in names for v in b.get(n, {}).values()]
+        return sum(v[0] for v in rows), sum(v[1] for v in rows)
+    lines = [("not on target", total("missing", "unique")),
+             ("  of which never read", total("unique"))]
+    if total("unhashed")[0]:
+        lines.append(("not hashed yet", total("unhashed")))
+    lines.append(("on target", total("present")))
+    for label, (n, sz) in lines:
+        print(f"[bytecat] {label:<21s} {n:>9,} files  {human(sz):>10s}")
     print(f"[bytecat] report written to {out}")
-    print("[bytecat] nothing was deleted or moved.")
     return 0
 
 
