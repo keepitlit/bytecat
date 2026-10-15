@@ -102,10 +102,10 @@ try:
     check("re-filed content is present for BOTH (content semantics, not path)",
           count(out, "agree, content present on target") == 1, out)
     check("absent + corrupted are absent for BOTH",
-          count(out, "agree, content absent from target") == 2, out)
+          count(out, "not on target, bytecat did not say copied") == 2, out)
     check("no disagreement on a truthful catalog",
-          count(out, "bytecat over-reports") == 0
-          and count(out, "bytecat under-reports") == 0, out)
+          count(out, "bytecat says copied, disk says no") == 0
+          and count(out, "disk has it, bytecat did not say so") == 0, out)
     check("the corrupted file is named in the report", "corrupt.bin" in rep, rep[:400])
     check("the report states what it does not prove",
           "DOES NOT PROVE" in rep and "independence of authorship" in rep, rep[-600:])
@@ -127,7 +127,7 @@ try:
     rc, out, err, rep = audit(home, "coverage", "--source", str(src),
                               "--target", str(tgt))
     check("a lying catalog makes the audit DISAGREE",
-          count(out, "bytecat over-reports") == 1, out)
+          count(out, "bytecat says copied, disk says no") == 1, out)
     check("...and exit non-zero", rc == 1, f"rc={rc}")
     check("the over-reported file is named", "gone.bin" in rep, rep[:600])
     check("the report calls the verdict unsafe", "disagree" in rep.lower(), rep[:900])
@@ -185,7 +185,8 @@ try:
     # deletion of a catalogued file must show up too
     os.remove(d / "b.bin")
     rc, out, err, rep = audit(home2, "dupes", "--path", str(d))
-    check("a vanished file is reported", count(out, "in catalog, not on disk") == 1, out)
+    check("a vanished file is reported",
+          count(out, "in catalog, not found or skipped on disk") == 1, out)
 
     # --no-drift must actually stand down
     rc, out, err, rep = audit(home2, "dupes", "--path", str(d), "--no-drift")
