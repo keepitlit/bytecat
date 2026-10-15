@@ -428,7 +428,8 @@ def part_b():
           "\n".join(f"{m.file}:{m.line}  {m.body}" for m in j.exceptions))
 
     # A probe explainer on a real screen fails, a marker citing nothing fails with it,
-    # and removing the probe returns to the baseline.
+    # and removing the probe returns to the baseline. Each is measured against the
+    # tree as it stands, so a failure above does not hide one here.
     cli = next(s for s in scans if s.file == "bytecat/cli.py")
     source = (ROOT / cli.file).read_text(encoding="utf-8")
     probe = "[bytecat] pipeline complete. Every stage ran, and nothing on your drives was moved."
@@ -442,11 +443,14 @@ def part_b():
 
     a, b, c = rejudge(probed), rejudge(marked), rejudge("")
     base = [cb.line(o) for o in j.offenders]
+    probes = [o.text for o in a.offenders if o.text == probe]
     check("a probe explainer on a real screen fails",
-          [o.text for o in a.offenders if o.text == probe] == [probe] and len(a.offenders) == len(base) + 1)
+          len(probes) == 1 + sum(o.text == probe for o in j.offenders) and len(a.offenders) == len(base) + 1)
     check("a marker that cites nothing fails, and excuses nothing",
-          len(b.faults) == 1 and len(b.offenders) == len(base) + 1 and not b.exceptions)
-    check("removing the probe returns to the baseline", [cb.line(o) for o in c.offenders] == base and not c.faults)
+          len(b.faults) == len(j.faults) + 1 and len(b.offenders) == len(base) + 1
+          and len(b.exceptions) == len(j.exceptions))
+    check("removing the probe returns to the baseline",
+          [cb.line(o) for o in c.offenders] == base and c.faults == j.faults)
     return outside
 
 
