@@ -584,14 +584,13 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
         if not cells["atlas_over"] and not cells["atlas_under"]:
             # The bare line only when every source file was compared.
             if uncompared:
-                fh.write("bytecat and the disk agree on catalogued files. "
-                         f"{uncompared:,} source file(s) not compared with the "
-                         "target.\n")
+                fh.write(f"bytecat and the disk agree, but {uncompared:,} source "
+                         "file(s) were not compared.\n")
             else:
                 fh.write("bytecat and the disk agree.\n")
         else:
-            fh.write("**bytecat and the disk disagree.** Do not act on the coverage "
-                     "report until this is resolved.\n")
+            fh.write("**bytecat and the disk disagree**: resolve before acting on "
+                     "the coverage report.\n")
 
         _table(fh, "bytecat says copied, disk says no", cells["atlas_over"],
                "Path | Bytes")
@@ -633,8 +632,8 @@ def write_dupes_report(out: Path, scope, local, splits, merges, sha,
                     fh.write(f"{len(local) - checked:,} group(s) had fewer than two "
                              "readable members, not checked.\n")
         else:
-            fh.write("**bytecat and the disk disagree.** Treat every duplicate "
-                     "report touching these groups as unsafe.\n")
+            fh.write("**bytecat and the disk disagree**: duplicate reports on "
+                     "these groups are unsafe.\n")
 
         fh.write(f"\n### Groups that split ({len(splits):,})\n\n")
         if not splits:

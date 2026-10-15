@@ -396,7 +396,7 @@ def main() -> int:
     ap.add_argument("--volume-uuid", default="",
                     help="set the volume ID (for network shares)")
     ap.add_argument("--allow-marker", action="store_true",
-                    help=f"write a {MARKER} file at the volume root if it has no ID")
+                    help=f"write {MARKER} at the volume root if it has no ID")
     ap.add_argument("--include-hidden", action="store_true")
     ap.add_argument("--descend-bundles", action="store_true",
                     help="list the files inside bundles (.photoslibrary, .app, ...)")

@@ -109,7 +109,7 @@ def cmd_pipeline(args) -> int:
         r = subprocess.run(cmd)
         if r.returncode != 0:
             # Each step commits per batch, so a re-run resumes where it stopped.
-            print(f"[bytecat] {name} failed; pipeline stopped. Re-run to resume.",
+            print(f"[bytecat] {name} failed, pipeline stopped; re-run to resume.",
                   file=sys.stderr)
             return r.returncode
     return 0
