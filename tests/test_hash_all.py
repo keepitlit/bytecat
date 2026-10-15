@@ -7,7 +7,7 @@ observed on a tree where it makes no difference has proved nothing, so this
 seeds files that are DELIBERATELY size-unique and asserts the two modes
 disagree about them -- and agree about everything else.
 """
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,7 +32,9 @@ def seed(root):
 
 
 def catalog(tmp, mode):
-    """Scan + merge + hash a fresh tree in its own catalog. Return (rows, stderr)."""
+    """Scan + merge + hash a fresh tree in its own catalog.
+
+    Return (rows, stderr, returncode, summary counts)."""
     home = tmp / f"home-{mode}"
     src = tmp / f"src-{mode}"
     seed(src)
@@ -55,13 +57,23 @@ def catalog(tmp, mode):
     for line in dump.stdout.strip().splitlines():
         p, t1, has_blob = line.split("|")
         rows[p] = (t1 == "1", has_blob == "True")
-    return rows, h.stderr, h.returncode
+    return rows, h.stderr, h.returncode, summary_counts(h.stdout)
+
+
+def summary_counts(out):
+    """The hash summary's numbers in order: hashed, reused, need no read, unreadable.
+
+    Read by position, so the assertions hold the counts and not the sentence."""
+    for line in out.splitlines():
+        if line.startswith("[bytecat] hashed"):
+            return [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", line)]
+    return []
 
 
 tmp = Path(tempfile.mkdtemp(prefix="bytecat-hashall-"))
 try:
-    t1, t1_err, t1_rc = catalog(tmp, "tier1")
-    al, al_err, al_rc = catalog(tmp, "all")
+    t1, t1_err, t1_rc, t1_counts = catalog(tmp, "tier1")
+    al, al_err, al_rc, al_counts = catalog(tmp, "all")
 
     check("tier 1 run", t1_rc == 0, t1_err[-300:])
     check("--hash-all run", al_rc == 0, al_err[-300:])
@@ -95,11 +107,15 @@ try:
     check("symlink still closed out with no blob under --hash-all",
           al["link.bin"] == (True, False), f"{al.get('link.bin')}")
 
-    # stage 0 must announce that it stood down
-    check("--hash-all reports stage 0 disabled", "stage 0 DISABLED" in al_err,
-          al_err[-200:])
-    check("tier 1 reports files skipped as unique", "unique by size" in t1_err,
-          t1_err[-200:])
+    # The summary must report what was read and what was closed out unread:
+    # under --hash-all only the symlink needs no read; tier 1 also skips the
+    # three size-unique files.
+    check("--hash-all reports 5 hashed, 1 needing no read",
+          len(al_counts) == 4 and al_counts[0] == 5 and al_counts[2] == 1,
+          f"{al_counts}")
+    check("tier 1 reports 2 hashed, 4 needing no read",
+          len(t1_counts) == 4 and t1_counts[0] == 2 and t1_counts[2] == 4,
+          f"{t1_counts}")
 
     # source tree untouched
     check("no source file removed",

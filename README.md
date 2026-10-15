@@ -210,8 +210,9 @@ its own read strategy, and SHA-256 rather than BLAKE2b-128.
 
 - `audit coverage --source <path> --target <path>`: walks both trees and
   crosses "is this content on the target?" against bytecat's own answer. The
-  off-diagonal cells are the product; a non-empty **bytecat over-reports** cell is
-  a false "it's safely copied", the failure that would actually cost data.
+  off-diagonal cells are the product; a non-empty **bytecat says copied, disk says
+  no** cell is a false "it's safely copied", the failure that would actually cost
+  data.
 - `audit dupes --path <path>`: re-reads only the members of duplicate groups
   and asserts SHA-256 partitions them exactly as `blob_id` does. A group that
   splits is a collision or a bug, and it is the check you want run *before* an

@@ -94,9 +94,12 @@ def collect(conn, *, min_bytes: int, cross_host_only: bool) -> list[dict]:
     return out
 
 
-def write_report(groups: list[dict], path: Path, *, top: int) -> dict:
+def write_report(groups: list[dict], path: Path, *, top: int,
+                 cross_host_only: bool = False, filters: str = "",
+                 n_unhashed: int = 0) -> dict:
     total_wasted = sum(g["wasted"] for g in groups)
     cross_host = [g for g in groups if len(g["hosts"]) > 1]
+    one_host = [g for g in groups if len(g["hosts"]) == 1]
     cross_host_wasted = sum(g["wasted"] for g in cross_host)
 
     lines: list[str] = []
@@ -104,24 +107,52 @@ def write_report(groups: list[dict], path: Path, *, top: int) -> dict:
 
     add(f"# Duplicate report, {datetime.now():%Y-%m-%d %H:%M}")
     add("")
-    add("Nothing has been deleted or moved. This is a report; you decide.")
-    add("")
     add("## Summary")
     add("")
     add(f"- **{len(groups):,}** groups of identical files")
     add(f"- **{human(total_wasted)}** reclaimable if you kept one copy of each")
-    add(f"- **{len(cross_host):,}** groups span more than one machine "
-        f"({human(cross_host_wasted)})")
+    if not cross_host_only:
+        # Under --cross-host-only every group spans machines: the line would
+        # repeat the one above.
+        add(f"- **{len(cross_host):,}** groups span more than one machine "
+            f"({human(cross_host_wasted)})")
     add("")
-    add("Hardlinks are already collapsed: several names for one physical file "
-        "are not counted as waste.")
-    add("")
+    # Without these two lines a filtered or partly hashed run reads as the
+    # whole catalog.
+    if filters:
+        add(f"Filtered: {filters}")
+        add("")
+    if n_unhashed:
+        add(f"{n_unhashed:,} files not hashed yet")
+        add("")
+    if not groups:
+        add("No duplicates found.")
+        add("")
+
+    def members(g: dict) -> None:
+        # Names that share host, volume and inode are one physical file (the
+        # key collect() uses), so deleting one of them frees nothing.
+        names: dict[tuple, int] = defaultdict(int)
+        for m in g["members"]:
+            if m["nlink"] and m["nlink"] > 1:
+                names[(m["host"], m["vol_uuid"], m["inode"])] += 1
+        for m in g["members"]:
+            flag = "" if m["vol_state"] == "online" else "  _(volume offline)_"
+            if m["nlink"] and m["nlink"] > 1 and \
+                    names[(m["host"], m["vol_uuid"], m["inode"])] > 1:
+                flag += "  _(hardlink)_"
+            add(f"- `{m['host']}` [{m['vol_label'] or m['vol_uuid'][:8]}] "
+                f"`{m['relpath']}`{flag}")
+
+    def more(section: list[dict]) -> None:
+        # One line per truncated section; --top of all groups lists every section.
+        if len(section) > top:
+            add(f"_…and {len(section) - top:,} more groups; "
+                f"`--top {len(groups)}` lists all._")
+            add("")
 
     if cross_host:
         add("## Same content on more than one machine")
-        add("")
-        add("Usually the interesting ones: a real backup, or a copy you forgot "
-            "you made. Worth checking before the single-machine list.")
         add("")
         for g in cross_host[:top]:
             add(f"### {human(g['size'])} × {g['n_copies']} copies "
@@ -129,29 +160,25 @@ def write_report(groups: list[dict], path: Path, *, top: int) -> dict:
             add("")
             add(f"`{g['hash']}` · hosts: {', '.join(g['hosts'])}")
             add("")
-            for m in g["members"]:
-                flag = "" if m["vol_state"] == "online" else "  _(volume offline)_"
-                add(f"- `{m['host']}` [{m['vol_label'] or m['vol_uuid'][:8]}] "
-                    f"`{m['relpath']}`{flag}")
+            members(g)
             add("")
+        more(cross_host)
 
-    add("## All duplicate groups (largest waste first)")
-    add("")
-    for g in groups[:top]:
-        add(f"### {human(g['size'])} × {g['n_copies']} copies "
-            f"({human(g['wasted'])} reclaimable)")
-        add("")
-        add(f"`{g['hash']}`")
-        add("")
-        for m in g["members"]:
-            flag = "" if m["vol_state"] == "online" else "  _(volume offline)_"
-            add(f"- `{m['host']}` [{m['vol_label'] or m['vol_uuid'][:8]}] "
-                f"`{m['relpath']}`{flag}")
-        add("")
-
-    if len(groups) > top:
-        add(f"_…and {len(groups) - top:,} more groups. "
-            f"Re-run with `--top {len(groups)}` for the full list._")
+    # Each group is listed once: this section holds only single-machine groups,
+    # and goes without a heading when it is the only section.
+    if one_host:
+        if cross_host:
+            add("## Same content on one machine")
+            add("")
+        for g in one_host[:top]:
+            add(f"### {human(g['size'])} × {g['n_copies']} copies "
+                f"({human(g['wasted'])} reclaimable)")
+            add("")
+            add(f"`{g['hash']}`")
+            add("")
+            members(g)
+            add("")
+        more(one_host)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines))
@@ -169,7 +196,7 @@ def main() -> int:
     ap.add_argument("--min-bytes", type=int, default=1,
                     help="ignore groups reclaiming less than this")
     ap.add_argument("--cross-host-only", action="store_true")
-    ap.add_argument("--top", type=int, default=500, help="groups to detail in the file")
+    ap.add_argument("--top", type=int, default=500, help="groups to list")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
@@ -182,18 +209,28 @@ def main() -> int:
         return 2
     groups = collect(conn, min_bytes=args.min_bytes,
                      cross_host_only=args.cross_host_only)
+    n_unhashed = conn.execute(
+        "SELECT COUNT(*) FROM files WHERE state = 'present' AND t1_hashed = 0"
+    ).fetchone()[0]
+    filters = ", ".join(
+        ([f"--min-bytes {args.min_bytes}"] if args.min_bytes > 1 else [])
+        + (["--cross-host-only"] if args.cross_host_only else []))
 
     out = Path(args.out) if args.out else (
         db.atlas_home() / "reports" / f"duplicates-{datetime.now():%Y%m%d-%H%M}.md"
     )
-    s = write_report(groups, out, top=args.top)
+    s = write_report(groups, out, top=args.top, cross_host_only=args.cross_host_only,
+                     filters=filters, n_unhashed=n_unhashed)
 
     # Terminal output is aggregate only -- the paths live in the file.
-    print(f"[bytecat] {s['groups']:,} duplicate groups · "
-          f"{human(s['wasted'])} reclaimable · "
-          f"{s['cross_host']:,} span multiple machines ({human(s['cross_host_wasted'])})")
+    line = (f"[bytecat] {s['groups']:,} duplicate groups · "
+            f"{human(s['wasted'])} reclaimable")
+    if not args.cross_host_only:
+        # Under --cross-host-only this clause would repeat the group count.
+        line += (f" · {s['cross_host']:,} span multiple machines "
+                 f"({human(s['cross_host_wasted'])})")
+    print(line)
     print(f"[bytecat] report written to {out}")
-    print("[bytecat] nothing was deleted or moved.")
     return 0
 
 

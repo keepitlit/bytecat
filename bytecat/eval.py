@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure retrieval quality against a fixed query set. No LLM, no side effects.
+"""Measure retrieval quality against a fixed query set.
 
 Every ranking change should be justified by a number, not by how good a handful
 of spot-checked queries look. This corpus has already produced one confident
@@ -136,11 +136,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="measure bytecat retrieval quality")
     ap.add_argument("--json", default="", help="write results to this path")
     ap.add_argument("--baseline", default="",
-                    help="compare against a previously saved --json run")
+                    help="MRR change vs a saved --json run")
     ap.add_argument("--smart", action="store_true",
-                    help="evaluate the LLM reranker instead of raw fusion")
+                    help="score with ask --smart reranking")
     ap.add_argument("--queries", default=str(QUERIES_PATH),
-                    help=f"query set (default: {QUERIES_PATH})")
+                    help="query set (default: tests/eval_queries.json)")
     args = ap.parse_args()
 
     spec = json.loads(Path(args.queries).expanduser().read_text())

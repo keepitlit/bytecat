@@ -19,13 +19,14 @@ def cmd_status(args) -> int:
         conn = db.connect(readonly=True)
     except db.NoCatalog as e:
         # A fresh install is not an error condition; report it and exit clean.
-        print(f"catalog: {db.db_path()}")
-        print(f"  {e}".replace("\n", "\n  "))
+        # The message already names the catalog path, so it is printed once.
+        print(e)
         return 0
 
+    # No online/offline figure: nothing ever marks a volume offline
+    # (db.mark_volume_offline has no caller), so it would always equal the count.
     hosts = conn.execute("""
-        SELECT h.name, COUNT(DISTINCT v.id) AS vols,
-               SUM(CASE WHEN v.state='online' THEN 1 ELSE 0 END) AS online
+        SELECT h.name, COUNT(DISTINCT v.id) AS vols
         FROM hosts h LEFT JOIN volumes v ON v.host_id = h.id
         GROUP BY h.id ORDER BY h.name
     """).fetchall()
@@ -54,21 +55,28 @@ def cmd_status(args) -> int:
     present = tot["present"] or 0
 
     print(f"catalog: {db.db_path()}")
-    print(f"files:   {present:,} present  ({gb(tot['bytes'])}), "
-          f"{tot['missing'] or 0:,} missing")
-    print()
-    print("hosts:")
-    for h in hosts:
-        print(f"  {h['name']:<20} {h['vols']} volume(s), {h['online'] or 0} online")
-    print()
-    print("tiers (of present files):")
-    for label, key in (("t1 hashed", "t1"), ("t2 metadata", "t2"),
-                       ("t3 embedded", "t3"), ("t4 enriched", "t4")):
-        done = tiers[key] or 0
-        pct = (100 * done / present) if present else 0
-        print(f"  {label:<14} {done:>10,} / {present:,}  ({pct:.1f}%)")
-    print()
-    print(f"duplicates: {dupes['groups']:,} groups, {gb(dupes['wasted'])} reclaimable")
+    if hosts:
+        print(f"files:   {present:,} present  ({gb(tot['bytes'])}), "
+              f"{tot['missing'] or 0:,} missing")
+        print()
+        print("hosts:")
+        for h in hosts:
+            print(f"  {h['name']:<20} {h['vols']} volume(s)")
+        print()
+        print("tiers:")
+        # Each row is named after the command that advances it.
+        for label, key in (("hashed", "t1"), ("extracted", "t2"),
+                           ("embedded", "t3"), ("enriched", "t4")):
+            done = tiers[key] or 0
+            pct = (100 * done / present) if present else 0
+            print(f"  {label:<14} {done:>10,} / {present:,}  ({pct:.1f}%)")
+        print()
+        print(f"duplicates: {dupes['groups']:,} groups, {gb(dupes['wasted'])} reclaimable")
+    else:
+        # A catalog file with nothing merged into it yet (pipeline on a fresh
+        # install creates one): the zero rows would read like a result.
+        print("nothing catalogued yet; start with:")
+        print("    bytecat scan ~/Documents | bytecat merge")
 
     recent = conn.execute("""
         SELECT stage, status, started_at, finished_at, n_seen, n_errors
@@ -77,8 +85,10 @@ def cmd_status(args) -> int:
     if recent:
         print("\nrecent runs:")
         for r in recent:
-            print(f"  {r['started_at']}  {r['stage']:<8} {r['status']:<6} "
-                  f"seen={r['n_seen']:,} err={r['n_errors']}")
+            # started_at is SQLite datetime('now'), which is UTC.
+            errs = f", {r['n_errors']} error(s)" if r['n_errors'] else ""
+            print(f"  {r['started_at']} UTC  {r['stage']:<8} {r['status']:<6}  "
+                  f"{r['n_seen']:,} seen{errs}")
     return 0
 
 
@@ -98,35 +108,38 @@ def cmd_pipeline(args) -> int:
         print(f"\n=== {name} ===", flush=True)
         r = subprocess.run(cmd)
         if r.returncode != 0:
-            print(f"[bytecat] {name} failed; stopping. "
-                  f"Progress is saved -- fix and re-run.", file=sys.stderr)
+            # Each step commits per batch, so a re-run resumes where it stopped.
+            print(f"[bytecat] {name} failed; pipeline stopped. Re-run to resume.",
+                  file=sys.stderr)
             return r.returncode
-    print("\n[bytecat] pipeline complete. `python3 -m bytecat status` for a summary.")
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="bytecat",
                                  description="local-only catalog of your files")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    # metavar: errors say "required: command" and the verb list prints once.
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="command",
+                            title="commands")
 
-    sub.add_parser("status", help="where everything stands")
+    sub.add_parser("status", help="summarise the catalog")
 
     p = sub.add_parser("pipeline", help="run hash + extract + embed in order")
     p.add_argument("--limit", type=int, default=0)
 
     for name, mod, helptext in (
-        ("scan", "bytecat.scan", "walk a tree, emit NDJSON"),
-        ("merge", "bytecat.merge", "ingest scanner NDJSON"),
-        ("hash", "bytecat.hash", "tier 1 content hashing"),
-        ("extract", "bytecat.extract", "tier 2 metadata"),
-        ("embed", "bytecat.embed", "tier 3 text + vectors"),
-        ("enrich", "bytecat.enrich", "tier 4 LLM labels (budgeted)"),
+        ("scan", "bytecat.scan", "list files under paths; pipe into merge"),
+        ("merge", "bytecat.merge", "add scan output to the catalog"),
+        ("hash", "bytecat.hash", "hash file contents"),
+        ("extract", "bytecat.extract", "read file metadata"),
+        ("embed", "bytecat.embed", "index files for search"),
+        ("enrich", "bytecat.enrich", "label files with a local LLM, up to --budget"),
         ("ask", "bytecat.ask", "search the catalog"),
-        ("eval", "bytecat.eval", "measure retrieval quality"),
+        ("eval", "bytecat.eval", "measure search quality"),
         ("dupes", "bytecat.report_dupes", "write the duplicate report"),
-        ("coverage", "bytecat.report_coverage", "what is NOT stored anywhere else"),
-        ("audit", "bytecat.audit", "re-read the disk and cross-check a catalog verdict"),
+        ("coverage", "bytecat.report_coverage",
+         "report a volume's files missing from the targets"),
+        ("audit", "bytecat.audit", "re-check coverage or dupes against the disk"),
     ):
         sp = sub.add_parser(name, help=helptext, add_help=False)
         sp.set_defaults(_module=mod)

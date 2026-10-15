@@ -61,12 +61,17 @@ try:
     out = r.stdout
     print("     " + " | ".join(l.strip() for l in out.splitlines() if "files" in l))
 
+    # The bucket checks call classify() in-process, so they pin what lands in
+    # each bucket, not the words the terminal prints for it.
+    from bytecat import db
+    from bytecat.report_coverage import classify, resolve_volumes
+    conn = db.connect(tmp / "home" / "catalog.db", readonly=True)
+    res = classify(conn, resolve_volumes(conn, ["u-src"], [])[0],
+                   resolve_volumes(conn, [], ["tgthost"]))
+    conn.close()
+
     def bucket(n):
-        for l in out.splitlines():
-            p = l.split()
-            if len(p) > 2 and p[1] == n:
-                return int(p[2].replace(",", ""))
-        return -1
+        return sum(v[0] for v in res["buckets"].get(n, {}).values())
 
     check("3 renamed files found PRESENT", bucket("present") == 3, f"got {bucket('present')}")
     check("checker CAN report absent", bucket("missing") + bucket("unique") == 3,

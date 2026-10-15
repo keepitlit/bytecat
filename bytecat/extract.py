@@ -264,7 +264,7 @@ def run_tier2(conn, limit: int = 0) -> dict:
                 )
                 conn.execute("UPDATE files SET t2_meta = 1 WHERE id = ?", (r["id"],))
                 stats["meta"] += 1
-        print(f"[bytecat] tier2 media {min(i+EXIF_BATCH, len(media)):,}/{len(media):,}",
+        print(f"[bytecat] media {min(i+EXIF_BATCH, len(media)):,}/{len(media):,}",
               file=sys.stderr)
 
     # Everything else: record the coarse kind so tier 3 knows what to do.
@@ -281,7 +281,8 @@ def run_tier2(conn, limit: int = 0) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat tier-2 metadata extraction")
+    ap = argparse.ArgumentParser(
+        description="read media metadata and file types (tier 2)")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
@@ -290,7 +291,8 @@ def main() -> int:
         print("[bytecat] warning: exiftool not found; media metadata will be empty",
               file=sys.stderr)
     s = run_tier2(conn, args.limit)
-    print(f"[bytecat] tier2: {s['meta']:,} files described, {s['errors']} errors")
+    # No error count: nothing in this pass increments one.
+    print(f"[bytecat] described {s['meta']:,} files")
     return 0
 
 

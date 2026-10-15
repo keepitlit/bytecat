@@ -108,7 +108,8 @@ def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
     lm.ensure_up()
     chroma = Chroma()
     if not chroma.heartbeat():
-        raise RuntimeError("Chroma is not reachable on :8100")
+        raise RuntimeError(f"Chroma not reachable at {chroma.base}; "
+                           f"start it or set BYTECAT_CHROMA_BASE")
 
     rows = pending(conn, kinds, limit)
     stats = {"seen": len(rows), "embedded": 0, "skipped": 0, "errors": 0}
@@ -190,24 +191,48 @@ def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
     return stats
 
 
+def unmounted_files(conn) -> int:
+    """Present files on volumes whose mount is not here; pending() skips them."""
+    n = 0
+    for v in conn.execute("""SELECT v.last_mount, COUNT(f.id) AS n
+                             FROM volumes v JOIN files f ON f.volume_id = v.id
+                             WHERE f.state = 'present' GROUP BY v.id"""):
+        if not (v["last_mount"] and os.path.isdir(v["last_mount"])):
+            n += v["n"]
+    return n
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat tier-3 embedding (local only)")
+    ap = argparse.ArgumentParser(
+        description="index files for semantic search with a local model (tier 3)")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--kinds", default="", help="comma-separated: document,image,...")
+    ap.add_argument("--kinds", default="",
+                    help="only these kinds, comma-separated (document,image,...)")
     ap.add_argument("--reset", action="store_true",
-                    help="clear vectors and re-embed everything")
+                    help="delete all vectors, then re-embed files on mounted volumes")
     args = ap.parse_args()
 
     conn = db.open_catalog()
-    if args.reset:
-        Chroma().delete_collection()
-        conn.execute("UPDATE files SET t3_embedded = 0")
-        print("[bytecat] vectors cleared; re-embedding from the catalog")
+    try:
+        if args.reset:
+            Chroma().delete_collection()
+            conn.execute("UPDATE files SET t3_embedded = 0")
+            n = unmounted_files(conn)
+            left = f"; {n:,} files on unmounted volumes not re-embedded" if n else ""
+            print(f"[bytecat] vectors cleared{left}")
 
-    s = run(conn, kinds=[k for k in args.kinds.split(",") if k] or None,
-            limit=args.limit)
-    print(f"[bytecat] embedded {s['embedded']:,}; skipped {s['skipped']:,} "
-          f"(nothing to index); {s['errors']} errors")
+        s = run(conn, kinds=[k for k in args.kinds.split(",") if k] or None,
+                limit=args.limit)
+    except RuntimeError as e:
+        # LMStudioDown, LocalOnlyError and the Chroma errors each name what
+        # failed and what to do; print that line instead of a traceback. The
+        # exit code stays 1, as for the uncaught exception.
+        print(f"[bytecat] {e}", file=sys.stderr)
+        return 1
+    # No skipped count: build_text always has the path and name, so it never
+    # comes back empty.
+    if s["seen"]:
+        print(f"[bytecat] embedded {s['embedded']:,}; {s['errors']:,} failed")
     return 0
 
 

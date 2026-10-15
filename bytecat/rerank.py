@@ -24,10 +24,9 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from typing import Optional
 
-from .llm import LMStudio
+from .llm import LMStudio, failure_reason, note_once
 
 SYSTEM = (
     "You rank file-search results. You are given a user's query and a numbered "
@@ -154,14 +153,13 @@ def rerank(query: str, results: list[dict], *,
         raw = lm.chat(SYSTEM, f"query: {query}\n\ncandidates:\n{candidate_block(pool)}",
                       max_tokens=MAX_TOKENS, schema=RERANK_SCHEMA)
     except Exception as e:
-        print(f"[bytecat] rerank unavailable ({type(e).__name__}); "
-              f"using fused order", file=sys.stderr)
+        # Results keep the fused order.
+        note_once(f"[bytecat] --smart skipped: {failure_reason(e)}")
         return results
 
     verdicts = parse_verdicts(raw, valid)
     if not verdicts:
-        print("[bytecat] rerank returned nothing usable; using fused order",
-              file=sys.stderr)
+        note_once("[bytecat] --smart skipped: unusable model reply")
         return results
 
     # Fused rank is the tiebreak, so files the model scored equally keep the

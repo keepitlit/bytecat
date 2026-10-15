@@ -15,7 +15,7 @@ building this locally, and it also keeps results safe to paste into a session.
 Usage:
     ask.py "insurance policy from 2024"
     ask.py "photos from the cabin trip" --kind image --limit 30
-    ask.py "tax return" --host nas --include-offline
+    ask.py "tax return" --host nas --online-only
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from typing import Optional
 from . import db
 from .chroma import Chroma
 from .rerank import rerank
-from .llm import LMStudio, LMStudioDown
+from .llm import LMStudio, LMStudioDown, failure_reason, note_once
 
 RRF_K = 60  # standard damping constant; larger = flatter contribution by rank
 
@@ -85,13 +85,12 @@ def vector_search(query: str, limit: int) -> list[int]:
             # One fast probe. embed() retries with back-off for a model that is
             # still loading, which is right for the pipeline and wrong for an
             # interactive search against a server that is simply off.
-            raise LMStudioDown(f"no model server at {lm.base}")
+            raise LMStudioDown(f"no model server or model at {lm.base}")
         vec = lm.embed([query])[0]
         hits = Chroma().query(vec, n=limit)
         return [int(i) for i, _dist, _meta in hits]
     except Exception as e:
-        print(f"[bytecat] vector search unavailable ({type(e).__name__}); "
-              f"keyword only", file=sys.stderr)
+        note_once(f"[bytecat] keyword only: {failure_reason(e)}")
         return []
 
 
@@ -190,13 +189,17 @@ def render(results: list[dict], *, show_full_path: bool) -> str:
 
 def search(conn, query: str, *, limit: int = 20, kind: str = "", host: str = "",
            include_offline: bool = True, pool: int = 0,
-           collapse: bool = True, smart: bool = False) -> list[dict]:
+           collapse: bool = True, smart: bool = False,
+           stats: Optional[dict] = None) -> list[dict]:
     """Run both rankers and fuse. `pool` is how deep each ranker goes.
 
     `smart` adds a local-LLM reranking pass over the fused pool. It is off by
     default because it turns a sub-second search into a multi-second one; that
     is a good trade when the answer is hard to phrase and a bad one to impose on
     every lookup.
+
+    When `stats` is given and a filter left nothing, stats["hidden"] is how
+    many present candidates the filters removed, so "no matches" can say so.
     """
     pool = pool or max(limit * 4, 60)
     kw = keyword_search(conn, query, pool)
@@ -205,6 +208,8 @@ def search(conn, query: str, *, limit: int = 20, kind: str = "", host: str = "",
     ordered = [fid for fid, _ in fused]
     rows = hydrate(conn, ordered, kind=kind, host=host,
                    include_offline=include_offline, collapse=collapse)
+    if stats is not None and not rows and (kind or host or not include_offline):
+        stats["hidden"] = len(hydrate(conn, ordered, collapse=collapse))
     if smart:
         # Rerank before slicing: the whole point is that the right answer is
         # sitting below the cut line.
@@ -217,13 +222,13 @@ def main() -> int:
     ap.add_argument("query", nargs="+")
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--kind", default="",
-                    help="document|image|video|audio|archive|code|data|other")
+                    help="document|image|video|audio|archive|code|data|bundle|other")
     ap.add_argument("--host", default="")
     ap.add_argument("--online-only", action="store_true",
-                    help="hide files on volumes that are not currently connected")
+                    help="hide files on offline volumes")
     ap.add_argument("--full-path", action="store_true")
     ap.add_argument("--smart", action="store_true",
-                    help="rerank results with the local chat model (slower)")
+                    help="rerank with the local model in BYTECAT_CHAT_MODEL (slower)")
     args = ap.parse_args()
 
     try:
@@ -233,10 +238,18 @@ def main() -> int:
         # reaches __main__.py. An empty catalog is a thing to be told.
         print(f"[bytecat] {e}", file=sys.stderr)
         return 2
+    stats: dict = {}
     results = search(conn, " ".join(args.query), limit=args.limit,
                      kind=args.kind, host=args.host,
-                     include_offline=not args.online_only, smart=args.smart)
-    print(render(results, show_full_path=args.full_path))
+                     include_offline=not args.online_only, smart=args.smart,
+                     stats=stats)
+    if not results and stats.get("hidden"):
+        flags = [f for f in (args.kind and f"--kind {args.kind}",
+                             args.host and f"--host {args.host}",
+                             args.online_only and "--online-only") if f]
+        print(f"no matches; {stats['hidden']:,} hidden by {', '.join(flags)}")
+    else:
+        print(render(results, show_full_path=args.full_path))
     return 0
 
 
