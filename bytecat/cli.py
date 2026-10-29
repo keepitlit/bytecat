@@ -36,8 +36,8 @@ def cmd_status(args) -> int:
     if not vols:
         # A catalog file with nothing merged into it yet (pipeline on a fresh
         # install creates one): the zero rows would read like a result.
-        print(f"nothing catalogued in {db.db_path()} yet. "
-              "Start with: bytecat scan ~/Documents | bytecat merge")
+        print(f"nothing catalogued in {db.db_path()} yet; "
+              "start with: bytecat scan ~/Documents | bytecat merge")
         return 0
 
     tot = conn.execute("""
