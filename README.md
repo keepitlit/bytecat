@@ -220,7 +220,7 @@ its own read strategy, and SHA-256 rather than BLAKE2b-128.
 
 Both exit non-zero on any disagreement, so they can gate a script, and both
 write the per-file listing to `~/.local/share/bytecat/reports/`; the terminal
-gets counts only. Every report ends with what the run does and does not prove:
+gets the verdict first, then counts, never paths. Every report ends with what the run does and does not prove:
 a different algorithm and a fresh read of real bytes, but not independence of
 authorship. `--emit-manifest` writes the digests in hashdeep's manifest format
 so a genuinely external tool can be pointed at the same tree.

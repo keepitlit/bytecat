@@ -289,10 +289,8 @@ def resolve_scope(conn, path: str) -> Scope:
         # stays a placeholder: scanning the given path itself, when its drive is
         # catalogued under another mount, prunes the rest of that drive and
         # replaces the very claim under test.
-        sys.exit(
-            f"[bytecat] {root} is not under any catalogued mount\n"
-            "  never scanned: bytecat scan <path> | bytecat merge\n"
-            "  scanned at another path: mount it there")
+        sys.exit(f"[bytecat] {root} not catalogued; "
+                 "scan first: bytecat scan <path> | bytecat merge")
     vol_id, uuid, mount = best
     prefix = "" if root == mount else os.path.relpath(root, mount)
     return Scope(vol_id, uuid, mount, key(prefix), root)
@@ -400,7 +398,23 @@ def cmd_coverage(args) -> int:
                           s_bundles + t_bundles,
                           s_walk_err + t_walk_err + s_err + t_err, uncompared)
 
-    print(f"[bytecat] audit coverage  {src.root} -> {tgt.root}")
+    # The verdict first, from the same counts as the exit code. "confirmed"
+    # also needs every source file compared: audit walks hidden directories
+    # that scan skips, and a file the catalog never saw is one no coverage
+    # report covered -- the case that loses data when a drive is retired.
+    over, under = len(cells["atlas_over"]), len(cells["atlas_under"])
+    if not (over or under or uncompared):
+        print("[bytecat] audit: catalog confirmed")
+    if over:
+        print(f"[bytecat] {over:,} files the catalog called copied aren't on target; "
+              "don't delete")
+    if under:
+        print(f"[bytecat] {under:,} files on the target the catalog called missing")
+    if on_disk_only:
+        print(f"[bytecat] {len(on_disk_only):,} source files not in the catalog; "
+              "coverage never checked them")
+    if s_err:
+        print(f"[bytecat] {len(s_err):,} source files could not be read")
     tally([
         ("agree, content present on target", len(cells["agree_present"]), ""),
         ("not on target, bytecat did not say copied", len(cells["agree_absent"]), ""),
@@ -500,7 +514,16 @@ def cmd_dupes(args) -> int:
                        drift_new, drift_gone, drift_size,
                        vanished, read_err + walk_err, args.no_drift)
 
-    print(f"[bytecat] audit dupes  {scope.root}")
+    # The verdict first, from the same counts as the exit code; drift is
+    # reported below and changes neither.
+    if splits:
+        print(f"[bytecat] {len(splits):,} groups the catalog called identical differ; "
+              "don't delete from them")
+    if merges:
+        print(f"[bytecat] {len(merges):,} duplicates the catalog missed")
+    if not (splits or merges):
+        print("[bytecat] audit: groups confirmed" if local
+              else "[bytecat] audit: no duplicate groups to check")
     rows = [
         # Files actually hashed: vanished and unreadable members are not counted.
         ("duplicate groups", len(local), f"  ({len(sha):,} files re-read)"),
@@ -527,20 +550,15 @@ def cmd_dupes(args) -> int:
 # reporting -- per-file detail on disk, aggregates on stdout
 # --------------------------------------------------------------------------
 
-def proves(mode: str) -> str:
-    """The closing block of every report: what the run proves, and its limit.
+def proves() -> str:
+    """The last lines of every report: the limit of what the run proves.
 
     The bug classes a second algorithm can catch are listed in the module
-    docstring. dupes re-reads the catalog's member list, not a walk."""
-    what = ("files found by a fresh walk of the disk" if mode == "coverage"
-            else "group members")
-    return ("## Proof and limits\n\n"
-            f"PROVES: {what} were re-read now and hashed with SHA-256 "
-            "(the catalog uses BLAKE2b-128).\n\n"
-            "DOES NOT PROVE: independence of authorship. One author wrote this "
-            "check and the code it checks, so a mistake made in both survives. "
-            "For an outside check, run hashdeep on a manifest from "
-            "`--emit-manifest`.\n")
+    docstring; emit_manifest's docstring has the outside check."""
+    return "\n\n".join((
+        "Limit: re-read with SHA-256 by bytecat's own code, not an outside tool.",
+        "Outside check: --emit-manifest, then hashdeep -a -k <manifest> -r <tree>",
+    )) + "\n"
 
 
 def report_path(explicit: str, kind: str) -> Path:
@@ -565,6 +583,13 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w") as fh:
         fh.write("# Audit: coverage\n\n")
+        if cells["atlas_over"] or cells["atlas_under"]:
+            fh.write("**Disk and catalog disagree; don't act on the coverage report "
+                     "until resolved.**\n\n")
+        elif uncompared:
+            fh.write(f"Not confirmed: {uncompared:,} source files were not compared.\n\n")
+        else:
+            fh.write("Confirmed: disk matches the catalog.\n\n")
         fh.write(f"Source: {src} -- {len(s_entries):,} files, "
                  f"{human(sum(e.size for e in s_entries))}\n")
         fh.write(f"Target: {tgt} -- {len(t_entries):,} files, "
@@ -573,24 +598,14 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
         if bundles:
             # The catalog records a bundle as one entry, and a directory has no
             # bytes to digest, so the walk prunes it.
-            fh.write(f"{bundles} bundle(s) not checked.\n\n")
+            fh.write(f"{bundles} bundles not read (each is one catalog entry).\n\n")
 
-        fh.write("## Verdict\n\n")
+        fh.write("## Catalog against disk\n\n")
         fh.write("| | bytecat: on target | bytecat: did not say |\n|---|---:|---:|\n")
         fh.write(f"| **disk: on target** | {len(cells['agree_present']):,} "
                  f"| {len(cells['atlas_under']):,} |\n")
         fh.write(f"| **disk: not on target** | **{len(cells['atlas_over']):,}** "
                  f"| {len(cells['agree_absent']):,} |\n\n")
-        if not cells["atlas_over"] and not cells["atlas_under"]:
-            # The bare line only when every source file was compared.
-            if uncompared:
-                fh.write(f"bytecat and the disk agree, but {uncompared:,} source "
-                         "file(s) were not compared.\n")
-            else:
-                fh.write("bytecat and the disk agree.\n")
-        else:
-            fh.write("**bytecat and the disk disagree**: resolve before acting on "
-                     "the coverage report.\n")
 
         _table(fh, "bytecat says copied, disk says no", cells["atlas_over"],
                "Path | Bytes")
@@ -604,7 +619,7 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
                "Path | Bytes | bytecat said")
         if errors:
             _table(fh, "Unreadable", [(e,) for e in errors], "Error")
-        fh.write("\n" + proves("coverage"))
+        fh.write("\n" + proves())
 
 
 def write_dupes_report(out: Path, scope, local, splits, merges, sha,
@@ -617,24 +632,20 @@ def write_dupes_report(out: Path, scope, local, splits, merges, sha,
                   if sum(1 for rel, _ in members if rel in sha) >= 2)
     with out.open("w") as fh:
         fh.write("# Audit: dupes\n\n")
+        if splits or merges:
+            fh.write("**Disk and catalog disagree; don't delete from these groups "
+                     "until resolved.**\n\n")
+        elif not local:
+            fh.write("No duplicate groups to check.\n\n")
+        else:
+            fh.write(f"Confirmed: disk matches the catalog on {checked:,} groups.\n\n")
+            if len(local) - checked:
+                fh.write(f"{len(local) - checked:,} group(s) had fewer than two "
+                         "readable members, not checked.\n\n")
         fh.write(f"Scope: {scope}\nGenerated: {datetime.now():%Y-%m-%d %H:%M}\n\n")
         fh.write(f"{len(local):,} duplicate groups; {len(sha):,} files re-read.\n")
         if vanished:
             fh.write(f"{vanished:,} group member(s) not on disk, not re-read.\n")
-
-        fh.write("\n## Verdict\n\n")
-        if not splits and not merges:
-            if not local:
-                fh.write("No duplicate groups to check.\n")
-            else:
-                fh.write(f"bytecat and the disk agree on {checked:,} group(s).\n")
-                if len(local) - checked:
-                    fh.write(f"{len(local) - checked:,} group(s) had fewer than two "
-                             "readable members, not checked.\n")
-        else:
-            fh.write("**bytecat and the disk disagree**: duplicate reports on "
-                     "these groups are unsafe.\n")
-
         fh.write(f"\n### Groups that split ({len(splits):,})\n\n")
         if not splits:
             fh.write("_none_\n")
@@ -661,7 +672,7 @@ def write_dupes_report(out: Path, scope, local, splits, merges, sha,
                    "Path | Catalog bytes | Disk bytes")
         if errors:
             _table(fh, "Unreadable", [(e,) for e in errors], "Error")
-        fh.write("\n" + proves("dupes"))
+        fh.write("\n" + proves())
 
 
 def emit_manifest(path: Path, root: str, sha: dict[str, str],

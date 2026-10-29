@@ -107,8 +107,7 @@ try:
           count(out, "bytecat says copied, disk says no") == 0
           and count(out, "disk has it, bytecat did not say so") == 0, out)
     check("the corrupted file is named in the report", "corrupt.bin" in rep, rep[:400])
-    check("the report states what it does not prove",
-          "DOES NOT PROVE" in rep and "independence of authorship" in rep, rep[-600:])
+    check("the report names the outside check", "hashdeep -a -k" in rep, rep[-600:])
 
     # ------------------------------------------------- now lie to the catalog
     # Claim gone.bin's content also lives on the target. bytecat will say it is
@@ -129,6 +128,8 @@ try:
     check("a lying catalog makes the audit DISAGREE",
           count(out, "bytecat says copied, disk says no") == 1, out)
     check("...and exit non-zero", rc == 1, f"rc={rc}")
+    check("the verdict comes first and says not to delete",
+          "don't delete" in (out.splitlines() or [""])[0], out)
     check("the over-reported file is named", "gone.bin" in rep, rep[:600])
     check("the report calls the verdict unsafe", "disagree" in rep.lower(), rep[:900])
 
@@ -205,8 +206,7 @@ try:
     check("audit deleted nothing",
           (d / "a.bin").exists() and (d / "unseen.bin").exists()
           and (src / "gone.bin").exists() and (tgt / "corrupt.bin").exists())
-    check("audit never claims to be independent of its author",
-          "DOES NOT PROVE" in rep, rep[-400:])
+    check("audit names the outside check", "hashdeep -a -k" in rep, rep[-400:])
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

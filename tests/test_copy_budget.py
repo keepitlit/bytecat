@@ -93,19 +93,8 @@ SKIP = {
 EXPECTED_SKIP = 1
 # Over budget with no ruling behind them yet, each waiting on its card. Pinned by
 # exact text: a reworded string leaves the list and must pass on its own.
-PENDING = {
-    ("bytecat/audit.py",
-     "[bytecat] {root} is not under any catalogued mount never scanned: bytecat scan "
-     "<path> | bytecat merge scanned at another path: mount it there"):
-        "keep-it-lit-foss W2 - the refusal guards against a scan that prunes a drive",
-    ("bytecat/audit.py",
-     "## Proof and limits PROVES: {what} were re-read now and hashed with SHA-256 (the "
-     "catalog uses BLAKE2b-128). DOES NOT PROVE: independence of authorship. One author "
-     "wrote this check and the code it checks, so a mistake made in both survives. For an "
-     "outside check, run hashdeep on a manifest from `--emit-manifest`."):
-        "keep-it-lit-foss W2 - the limit of what an audit proves",
-}
-EXPECTED_PENDING = 2
+PENDING: dict = {}
+EXPECTED_PENDING = 0
 # Valid markers in the tree. Adding one changes this number too.
 EXPECTED_EXCEPTIONS = 0
 
