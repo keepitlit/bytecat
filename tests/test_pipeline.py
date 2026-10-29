@@ -256,6 +256,27 @@ def main() -> int:
         check("absent volume keeps its files", present_v2 == still,
               f"{present_v2} -> {still}")
 
+        print("\n[an unplugged drive on this machine reads offline]")
+        v3 = tmp / "v3"
+        (v3 / "a").mkdir(parents=True)
+        (v3 / "a/plug.txt").write_text("plug test\n")
+        s = run([py, "-m", "bytecat.scan", str(v3)], env)
+        subprocess.run([py, "-m", "bytecat.merge"], input=s.stdout,
+                       capture_output=True, text=True, env=env, cwd=ROOT)
+        vid = conn.execute("""SELECT volume_id FROM files
+                              WHERE relpath='a/plug.txt'""").fetchone()[0]
+        check("a mounted drive reads online", db.volume_states(conn)[vid] == "online")
+        v3.rename(tmp / "v3-unplugged")
+        db.refresh_volume_states(conn)
+        check("an unplugged drive is stored offline",
+              conn.execute("SELECT state FROM volumes WHERE id=?", (vid,)
+                           ).fetchone()[0] == "offline")
+        check("its files stay present",
+              conn.execute("SELECT state FROM files WHERE relpath='a/plug.txt'"
+                           ).fetchone()[0] == "present")
+        # The deletion check below counts every row, this drive's included.
+        n_after = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+
         print("\n[deletion is marked, not removed]")
         (v1 / "docs/unique.txt").unlink()
         scan_merge(v1, "VOL1", "hostA")

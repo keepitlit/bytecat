@@ -11,6 +11,7 @@ continuously, so the default deliberately points at ~/.local/share/bytecat.
 from __future__ import annotations
 
 import os
+import platform
 import sqlite3
 import sys
 import time
@@ -208,12 +209,55 @@ def resolve_volume(conn: sqlite3.Connection, value: str) -> list[int]:
     return [r["id"] for r in hit]
 
 
-def mark_volume_offline(conn: sqlite3.Connection, volume_id: int) -> None:
-    """Offline is not an error and never touches the volume's file rows.
+def this_host() -> str:
+    """The host name scan records by default for drives on this machine."""
+    return platform.node().split(".")[0]
 
-    An unplugged drive must not look like 400k deletions.
+
+def _volume_here(uuid: str, root: str) -> bool:
+    """Whether the drive with this identity is mounted at its last scan root.
+
+    Identity is re-derived the way scan derives it, so a different drive
+    mounted at the same path reads as offline. A synthetic identity now (no
+    UUID, no marker) proves nothing against a forced or marker one, so only a
+    real mismatch counts. Known gap: a local drive scanned with --volume-uuid
+    reads as offline, because diskutil reports its real UUID.
     """
-    conn.execute("UPDATE volumes SET state = 'offline' WHERE id = ?", (volume_id,))
+    if not root or not os.path.isdir(root):
+        return False
+    from . import scan
+    now = scan.volume_identity(root)["uuid"]
+    if now == uuid:
+        return True
+    return now.startswith("synthetic:") and not uuid.startswith("synthetic:")
+
+
+def volume_states(conn: sqlite3.Connection) -> dict[int, str]:
+    """Each volume's state now: this machine's drives are checked on disk;
+    another host's drives keep the state their last scan left."""
+    here = this_host()
+    states: dict[int, str] = {}
+    for r in conn.execute("""SELECT v.id, v.uuid, v.last_mount, v.state, h.name AS host
+                             FROM volumes v JOIN hosts h ON h.id = v.host_id"""):
+        if r["host"] == here:
+            states[r["id"]] = "online" if _volume_here(r["uuid"], r["last_mount"]) \
+                else "offline"
+        else:
+            states[r["id"]] = r["state"]
+    return states
+
+
+def refresh_volume_states(conn: sqlite3.Connection) -> None:
+    """Store volume_states(), so the tiers skip drives that are unplugged.
+
+    Offline is not an error and never touches the volume's file rows: an
+    unplugged drive must not look like 400k deletions. The next merge of the
+    drive marks it online again.
+    """
+    for vid, state in volume_states(conn).items():
+        conn.execute("UPDATE volumes SET state = ? WHERE id = ? AND state != ?",
+                     (state, vid, state))
+    conn.commit()
 
 
 # --------------------------------------------------------------------------

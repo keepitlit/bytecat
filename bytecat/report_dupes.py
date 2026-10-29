@@ -41,7 +41,7 @@ def collect(conn, *, min_bytes: int, cross_host_only: bool) -> list[dict]:
         SELECT b.id AS blob_id, b.hash, b.size_bytes,
                f.id AS file_id, f.relpath, f.inode, f.nlink,
                v.uuid AS vol_uuid, v.label AS vol_label, v.last_mount,
-               v.state AS vol_state, h.name AS host
+               v.state AS vol_state, v.id AS vol_id, h.name AS host
         FROM blobs b
         JOIN files f  ON f.blob_id = b.id AND f.state = 'present'
         JOIN volumes v ON v.id = f.volume_id
@@ -50,9 +50,12 @@ def collect(conn, *, min_bytes: int, cross_host_only: bool) -> list[dict]:
         ORDER BY b.size_bytes DESC, b.id
     """).fetchall()
 
+    # Live state, as ask uses: the report opens the catalog read-only.
+    states = db.volume_states(conn)
     groups: dict[int, list] = defaultdict(list)
     for r in rows:
-        groups[r["blob_id"]].append(r)
+        groups[r["blob_id"]].append(
+            dict(r, vol_state=states.get(r["vol_id"], r["vol_state"])))
 
     out = []
     for blob_id, members in groups.items():

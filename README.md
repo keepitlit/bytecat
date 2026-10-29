@@ -67,8 +67,9 @@ in `2024/Italy/` is skipped so the budget goes to `Scan_0043.pdf` in Downloads.
 - **Nothing duplicated.** Extracted text is embedded and discarded. What persists
   is a vector, a character count, and a checksum. Chroma's `documents` field is
   deliberately left null.
-- **Offline is normal.** An unplugged drive marks its rows offline. It never
-  looks like a mass deletion, and its files stay searchable.
+- **Offline is normal.** An unplugged drive shows as offline in `status`, `ask` and
+  the duplicate report, and the tiers skip it. It never looks like a mass deletion, and
+  its files stay searchable. Another host's drives show the state of their last scan.
 - **Resumable.** Every tier resumes by asking "which rows are behind?", so a
   20-hour pass that dies at hour 19 restarts at hour 19.
 
@@ -156,7 +157,7 @@ python3 -m bytecat ask "photos from the cabin trip" --kind image
 python3 -m bytecat ask "tax return" --host nas
 
 # 5. what exists nowhere else: the report to read before unplugging a drive
-python3 -m bytecat coverage --source-volume "Backup 1" --target-host nas
+python3 -m bytecat coverage --source-volume Backup --target-host nas
 
 # 6. cross-check a verdict against the disk itself, under a second algorithm
 python3 -m bytecat audit coverage --source "/Volumes/Backup 1" --target /mnt/user/media

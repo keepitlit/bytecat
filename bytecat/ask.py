@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import platform
 import re
 import sys
 from typing import Optional
@@ -111,7 +110,7 @@ def hydrate(conn, file_ids: list[int], *, kind: str = "", host: str = "",
     q = f"""SELECT f.id, f.relpath, f.name, f.ext, f.size_bytes, f.mtime, f.state,
                    f.blob_id,
                    v.last_mount, v.label AS vol_label, v.uuid AS vol_uuid,
-                   v.state AS vol_state, h.name AS host,
+                   v.state AS vol_state, v.id AS vol_id, h.name AS host,
                    e.kind, e.title, e.gist, e.captured_at,
                    b.n_files AS n_copies
             FROM files f
@@ -127,10 +126,15 @@ def hydrate(conn, file_ids: list[int], *, kind: str = "", host: str = "",
     if host:
         q += " AND h.name = ?"
         params.append(host)
-    if not include_offline:
-        q += " AND v.state = 'online'"
 
     by_id = {r["id"]: dict(r) for r in conn.execute(q, params)}
+    # Live, not stored: ask opens the catalog read-only, and a drive unplugged
+    # since the last tier run must still read as offline.
+    states = db.volume_states(conn)
+    for r in by_id.values():
+        r["vol_state"] = states.get(r["vol_id"], r["vol_state"])
+    if not include_offline:
+        by_id = {i: r for i, r in by_id.items() if r["vol_state"] == "online"}
     ordered = [by_id[i] for i in file_ids if i in by_id]
     if not collapse:
         return ordered
@@ -164,7 +168,7 @@ def human_size(n: int) -> str:
 
 def this_host() -> str:
     """The host name scan records by default for drives on this machine."""
-    return platform.node().split(".")[0]
+    return db.this_host()
 
 
 def render(results: list[dict], *, show_full_path: bool) -> str:

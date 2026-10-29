@@ -23,10 +23,9 @@ def cmd_status(args) -> int:
         print(e)
         return 0
 
-    # No online/offline figure: nothing ever marks a volume offline
-    # (db.mark_volume_offline has no caller), so it would always equal the count.
+    states = db.volume_states(conn)
     vols = conn.execute("""
-        SELECT h.name host, v.uuid, v.label, v.last_mount, v.last_scan,
+        SELECT v.id, h.name host, v.uuid, v.label, v.last_mount, v.last_scan,
                (SELECT COUNT(*) FROM files f
                  WHERE f.volume_id = v.id AND f.state = 'present') n
         FROM volumes v JOIN hosts h ON h.id = v.host_id
@@ -76,8 +75,9 @@ def cmd_status(args) -> int:
             print(host)
         label = f"  {v['label']}" if v["label"] else ""
         scanned = (v["last_scan"] or "")[:10]
+        offline = "  offline" if states.get(v["id"]) == "offline" else ""
         print(f"  {v['last_mount'] or '-'}{label}  {v['uuid']}  "
-              f"{v['n']:,} files  scanned {scanned}")
+              f"{v['n']:,} files  scanned {scanned}{offline}")
     print()
     print("progress:")
     # Each row is named after the command that advances it.
@@ -169,6 +169,12 @@ def main(argv=None) -> int:
 
     if args.cmd == "status":
         return cmd_status(args)
+    # Before a tier reads files: a drive unplugged since its scan is stored as
+    # offline, so extract, embed and enrich skip it.
+    if args.cmd in ("pipeline", "hash", "extract", "embed", "enrich") and db.db_path().exists():
+        conn = db.connect()
+        db.refresh_volume_states(conn)
+        conn.close()
     if args.cmd == "pipeline":
         return cmd_pipeline(args)
 
