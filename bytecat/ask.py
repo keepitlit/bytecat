@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import re
 import sys
 from typing import Optional
@@ -90,7 +91,7 @@ def vector_search(query: str, limit: int) -> list[int]:
         hits = Chroma().query(vec, n=limit)
         return [int(i) for i, _dist, _meta in hits]
     except Exception as e:
-        note_once(f"[bytecat] keyword only: {failure_reason(e)}")
+        note_once(f"[bytecat] keyword results only: {failure_reason(e)}")
         return []
 
 
@@ -161,9 +162,15 @@ def human_size(n: int) -> str:
     return f"{x:.1f}TB"
 
 
+def this_host() -> str:
+    """The host name scan records by default for drives on this machine."""
+    return platform.node().split(".")[0]
+
+
 def render(results: list[dict], *, show_full_path: bool) -> str:
     if not results:
         return "no matches"
+    here = this_host()
     out = []
     for i, r in enumerate(results, 1):
         loc = f"{r['host']}:{r['vol_label'] or r['vol_uuid'][:8]}"
@@ -171,12 +178,18 @@ def render(results: list[dict], *, show_full_path: bool) -> str:
         dupes = f"  [{r['n_copies']} copies]" if (r["n_copies"] or 0) > 1 else ""
         when = (r["captured_at"] or "")[:10]
 
-        path = os.path.join(r["last_mount"] or "", r["relpath"]) \
-            if show_full_path and r["last_mount"] else r["relpath"]
-
+        joined = os.path.join(r["last_mount"] or "", r["relpath"])
+        kind = f"  {r['kind']}" if r["kind"] else ""
         out.append(f"{i:2}. {r['name']}   {human_size(r['size_bytes'])}"
-                   f"  {r['kind'] or '?'}{dupes}{offline}")
-        out.append(f"    {loc}  {path}")
+                   f"{kind}{dupes}{offline}")
+        # Both checks: two scan roots on one drive share its UUID, so
+        # last_mount holds only the later root, and another host's mount
+        # path can exist here too.
+        if r["last_mount"] and r["host"] == here and os.path.exists(joined):
+            out.append(f"    {joined}")
+        else:
+            path = joined if show_full_path and r["last_mount"] else r["relpath"]
+            out.append(f"    {loc}  {path}")
         if r.get("title"):
             out.append(f"    title: {r['title'][:110]}")
         if r.get("gist"):
@@ -222,11 +235,12 @@ def main() -> int:
     ap.add_argument("query", nargs="+")
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--kind", default="",
-                    help="document|image|video|audio|archive|code|data|bundle|other")
+                    choices=sorted(set(db.KIND_BY_EXT.values()) | {"other"}))
     ap.add_argument("--host", default="")
     ap.add_argument("--online-only", action="store_true",
                     help="hide files on offline volumes")
-    ap.add_argument("--full-path", action="store_true")
+    ap.add_argument("--full-path", action="store_true",
+                    help="join the mount for files on other machines too")
     ap.add_argument("--smart", action="store_true",
                     help="rerank with the local model in BYTECAT_CHAT_MODEL (slower)")
     args = ap.parse_args()
@@ -238,6 +252,12 @@ def main() -> int:
         # reaches __main__.py. An empty catalog is a thing to be told.
         print(f"[bytecat] {e}", file=sys.stderr)
         return 2
+    if args.host:
+        hosts = [r["name"] for r in conn.execute("SELECT name FROM hosts ORDER BY name")]
+        if args.host not in hosts:
+            print(f"[bytecat] no host {args.host!r} (hosts: {', '.join(hosts)})",
+                  file=sys.stderr)
+            return 2
     stats: dict = {}
     results = search(conn, " ".join(args.query), limit=args.limit,
                      kind=args.kind, host=args.host,

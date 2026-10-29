@@ -315,6 +315,20 @@ def main() -> int:
                   "text" not in [c[1] for c in conn.execute(
                       "PRAGMA table_info(extractions)")] or True)
 
+        print("\n[ask render -- an openable path only for files on this machine]")
+        from bytecat import ask as ak
+        row = {"name": "x.txt", "size_bytes": 3, "kind": "", "vol_state": "online",
+               "n_copies": 1, "captured_at": "", "title": "", "gist": "",
+               "last_mount": str(tmp), "relpath": "seed-marker", "vol_label": "D",
+               "vol_uuid": "u-render-1", "host": ak.this_host()}
+        (tmp / "seed-marker").write_text("x")
+        here = ak.render([row], show_full_path=False)
+        check("a file on this machine prints its absolute path",
+              str(tmp / "seed-marker") in here, here)
+        there = ak.render([dict(row, host="some-other-host")], show_full_path=False)
+        check("a file on another host prints host:label and relpath",
+              "some-other-host:D  seed-marker" in there and str(tmp) not in there, there)
+
         print("\n[rerank guards -- pure functions, no model needed]")
         from bytecat import rerank as rr
 
