@@ -14,8 +14,10 @@ to a file under ~/.local/share/bytecat/reports/, never to stdout -- the terminal
 gets aggregates only, so a personal archive's paths stay out of any transcript.
 
 Usage:
-    report_coverage.py --source-volume <uuid> --target-host <name> [...]
-    report_coverage.py --source-volume <uuid> --target-volume <uuid> [...]
+    report_coverage.py --source-volume <drive> --target-host <name> [...]
+    report_coverage.py --source-volume <drive> --target-volume <drive> [...]
+
+A <drive> is its UUID, its label or its mount, matched exactly.
 """
 
 from __future__ import annotations
@@ -43,13 +45,10 @@ def top_level(relpath: str) -> str:
     return head if "/" in relpath else "(root)"
 
 
-def resolve_volumes(conn, uuids: list[str], hosts: list[str]) -> list[int]:
+def resolve_volumes(conn, values: list[str], hosts: list[str]) -> list[int]:
     ids: list[int] = []
-    for u in uuids:
-        r = conn.execute("SELECT id FROM volumes WHERE uuid = ?", (u,)).fetchall()
-        if not r:
-            sys.exit(f"[bytecat] no volume with uuid {u!r}")
-        ids += [x["id"] for x in r]
+    for v in values:
+        ids += db.resolve_volume(conn, v)
     for h in hosts:
         r = conn.execute(
             "SELECT v.id FROM volumes v JOIN hosts h ON h.id = v.host_id "
@@ -157,7 +156,11 @@ def main() -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
-    conn = db.open_catalog()
+    try:
+        conn = db.connect(readonly=True)
+    except db.NoCatalog as e:
+        print(f"[bytecat] {e}", file=sys.stderr)
+        return 2
     src = resolve_volumes(conn, [args.source_volume], [])
     if len(src) != 1:
         sys.exit("[bytecat] --source-volume must name exactly one volume")

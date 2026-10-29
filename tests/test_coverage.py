@@ -68,6 +68,17 @@ try:
     conn = db.connect(tmp / "home" / "catalog.db", readonly=True)
     res = classify(conn, resolve_volumes(conn, ["u-src"], [])[0],
                    resolve_volumes(conn, [], ["tgthost"]))
+    # A drive can be named by its mount; a subfolder of it is refused, not
+    # widened to the whole drive.
+    by_mount = resolve_volumes(conn, [str(src)], [])
+    check("scanned root resolves to its volume",
+          by_mount == resolve_volumes(conn, ["u-src"], []), f"got {by_mount}")
+    try:
+        resolve_volumes(conn, [str(src / "shared")], [])
+        refused = False
+    except SystemExit:
+        refused = True
+    check("a subfolder of a mount is refused", refused)
     conn.close()
 
     def bucket(n):

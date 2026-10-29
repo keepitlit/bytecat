@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -177,6 +178,36 @@ def upsert_volume(
     return conn.execute(
         "SELECT id FROM volumes WHERE host_id = ? AND uuid = ?", (host_id, uuid)
     ).fetchone()["id"]
+
+
+def resolve_volume(conn: sqlite3.Connection, value: str) -> list[int]:
+    """Volume ids for a value a person typed: UUID, then label, then mount.
+
+    Exact matches only. A subfolder of a mount is not widened to the whole
+    drive: coverage compares whole volumes, so that would answer a different
+    question. A label two drives share is refused, never guessed. Exits with
+    the reason when nothing, or more than one drive, matches.
+    """
+    rows = conn.execute(
+        "SELECT v.id, v.uuid, v.label, v.last_mount, h.name AS host "
+        "FROM volumes v JOIN hosts h ON h.id = v.host_id ORDER BY h.name, v.id"
+    ).fetchall()
+    mount = os.path.abspath(value) if value else ""
+    for key, want in (("uuid", value), ("label", value), ("last_mount", mount)):
+        hit = [r for r in rows if r[key] and
+               (os.path.abspath(r[key]) if key == "last_mount" else r[key]) == want]
+        if hit:
+            break
+    if not hit:
+        sys.exit(f"[bytecat] no volume {value!r}; `bytecat status` lists them")
+    # The same UUID on two hosts is one drive scanned from both: keep both.
+    if key != "uuid" and len(hit) > 1:
+        print(f"[bytecat] {value!r} matches {len(hit)} volumes:", file=sys.stderr)
+        for r in hit:
+            print(f"  {r['host']}  {r['last_mount'] or r['label']}  {r['uuid']}",
+                  file=sys.stderr)
+        sys.exit("[bytecat] pass the UUID")
+    return [r["id"] for r in hit]
 
 
 def mark_volume_offline(conn: sqlite3.Connection, volume_id: int) -> None:

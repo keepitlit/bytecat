@@ -156,7 +156,7 @@ python3 -m bytecat ask "photos from the cabin trip" --kind image
 python3 -m bytecat ask "tax return" --host nas
 
 # 5. what exists nowhere else: the report to read before unplugging a drive
-python3 -m bytecat coverage --source "Backup 1" --target nas
+python3 -m bytecat coverage --source-volume "Backup 1" --target-host nas
 
 # 6. cross-check a verdict against the disk itself, under a second algorithm
 python3 -m bytecat audit coverage --source "/Volumes/Backup 1" --target /mnt/user/media

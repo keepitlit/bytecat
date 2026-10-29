@@ -58,7 +58,7 @@ def _work(job: tuple[int, str, int, bool]) -> tuple[int, Optional[str], Optional
 # path resolution
 # --------------------------------------------------------------------------
 
-def local_volumes(conn, only: str = "") -> dict[int, str]:
+def local_volumes(conn, only: Optional[list[int]] = None) -> dict[int, str]:
     """Volumes whose mount point exists on THIS machine right now.
 
     A volume that is offline (unplugged, or belongs to another host) is skipped
@@ -68,7 +68,7 @@ def local_volumes(conn, only: str = "") -> dict[int, str]:
     q = """SELECT v.id, v.uuid, v.last_mount, h.name AS host
            FROM volumes v JOIN hosts h ON h.id = v.host_id"""
     for r in conn.execute(q):
-        if only and r["uuid"] != only:
+        if only and r["id"] not in only:
             continue
         mount = r["last_mount"]
         if mount and os.path.isdir(mount):
@@ -260,7 +260,7 @@ def refresh_fanout(conn) -> None:
 # driver
 # --------------------------------------------------------------------------
 
-def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
+def run(conn, *, only_volume: Optional[list[int]] = None, workers: int = 0, limit: int = 0,
         hash_all: bool = False, inode_cache: bool = True,
         forget: bool = False) -> dict:
     vols = local_volumes(conn, only_volume)
@@ -269,7 +269,8 @@ def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
             print("[bytecat] catalog is empty; run bytecat scan ROOT | bytecat merge first",
                   file=sys.stderr)
         elif only_volume:
-            print(f"[bytecat] no mounted volume with ID {only_volume}", file=sys.stderr)
+            print("[bytecat] --volume is not mounted here; "
+                  "remote hosts: --emit-work HOST", file=sys.stderr)
         else:
             print("[bytecat] no catalogued volume is mounted here; "
                   "remote hosts: --emit-work HOST", file=sys.stderr)
@@ -347,7 +348,7 @@ def run(conn, *, only_volume: str = "", workers: int = 0, limit: int = 0,
 
 
 def emit_work(conn, host: str, *, hash_all: bool = False,
-              only_volume: str = "") -> None:
+              only_volume: Optional[list[int]] = None) -> None:
     """Emit a hashing work list for a host we cannot mount locally.
 
     The host runs `scan.py --hash-list work.json` (stdlib-only) and returns
@@ -357,7 +358,9 @@ def emit_work(conn, host: str, *, hash_all: bool = False,
     build_dup_sizes(conn, all_sizes=hash_all)
     # is_symlink/size guards mirror candidates(): under --hash-all the dup_sizes
     # filter no longer excludes them, and neither is worth shipping to a host.
-    extra = " AND v.uuid = ?" if only_volume else ""
+    only_volume = only_volume or []
+    extra = (f" AND v.id IN ({','.join('?' * len(only_volume))})"
+             if only_volume else "")
     rows = conn.execute(
         f"""SELECT f.id, f.relpath, f.size_bytes, v.last_mount, v.uuid
            FROM files f
@@ -366,7 +369,7 @@ def emit_work(conn, host: str, *, hash_all: bool = False,
            WHERE h.name = ? AND f.t1_hashed = 0 AND f.state = 'present'
              AND f.is_symlink = 0 AND f.size_bytes > 0
              AND f.size_bytes IN (SELECT size_bytes FROM dup_sizes){extra}""",
-        (host, only_volume) if only_volume else (host,),
+        (host, *only_volume),
     ).fetchall()
     json.dump(
         {"host": host,
@@ -409,7 +412,7 @@ def ingest(conn, path: str) -> tuple[int, int]:
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="hash file contents to find duplicates (tier 1)")
-    ap.add_argument("--volume", default="", help="restrict to one volume UUID")
+    ap.add_argument("--volume", default="", help="restrict to one drive: its UUID, label or mount")
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="hash at most N files")
     ap.add_argument("--emit-work", metavar="HOST", default="")
@@ -425,10 +428,11 @@ def main() -> int:
     args = ap.parse_args()
 
     conn = db.open_catalog()
+    only = db.resolve_volume(conn, args.volume) if args.volume else None
 
     if args.emit_work:
         emit_work(conn, args.emit_work, hash_all=args.hash_all,
-                  only_volume=args.volume)
+                  only_volume=only)
         return 0
     if args.ingest:
         n, n_err = ingest(conn, args.ingest)
@@ -442,7 +446,7 @@ def main() -> int:
         print("[bytecat] --forget requires --volume", file=sys.stderr)
         return 2
 
-    stats = run(conn, only_volume=args.volume, workers=args.workers,
+    stats = run(conn, only_volume=only, workers=args.workers,
                 limit=args.limit, hash_all=args.hash_all,
                 inode_cache=not args.no_inode_cache, forget=args.forget)
     if stats:
