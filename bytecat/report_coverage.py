@@ -117,35 +117,46 @@ def drive(conn, vol_id: int, *, with_uuid: bool) -> str:
 def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     b = res["buckets"]
+
+    def merged(*names):
+        folders: dict = defaultdict(lambda: [0, 0])
+        for n in names:
+            for k, v in b.get(n, {}).items():
+                folders[k][0] += v[0]
+                folders[k][1] += v[1]
+        return folders
+
+    def section(fh, title, folders, always=False):
+        n = sum(v[0] for v in folders.values())
+        if not n and not always:
+            return
+        sz = sum(v[1] for v in folders.values())
+        fh.write(f"## {title}\n\n{n:,} files, {human(sz)}\n\n")
+        if folders:
+            fh.write("| Folder | Files | Bytes |\n|---|---:|---:|\n")
+            for k, v in sorted(folders.items(), key=lambda kv: -kv[1][1]):
+                fh.write(f"| {k} | {v[0]:,} | {human(v[1])} |\n")
+            fh.write("\n")
+
     with out.open("w") as fh:
         # Blank lines between header lines: Markdown joins consecutive lines.
         fh.write(f"# Coverage report, {datetime.now():%Y-%m-%d %H:%M}\n\n"
                  f"Source: {src_label}\n\nTargets: {tgt_label}\n\n")
-        for name, title in (
-            ("present", "Confirmed present on a target (by content)"),
-            ("missing", "NOT on any target (hashed)"),
-            ("unique",  "NOT on any target (by size, not read)"),
-            ("unhashed", "Unknown: not hashed"),
-        ):
-            folders = b.get(name, {})
-            n = sum(v[0] for v in folders.values())
-            sz = sum(v[1] for v in folders.values())
-            fh.write(f"## {title}\n\n{n:,} files, {human(sz)}\n\n")
-            if folders:
-                fh.write("| Folder | Files | Bytes |\n|---|---:|---:|\n")
-                for k, v in sorted(folders.items(), key=lambda kv: -kv[1][1]):
-                    fh.write(f"| {k} | {v[0]:,} | {human(v[1])} |\n")
-                fh.write("\n")
-        fh.write("## Files not confirmed on a target\n\n")
-        if not res["missing_paths"]:
-            fh.write("None.\n")
-            return
-        fh.write("| Path | Bytes | Why |\n|---|---:|---|\n")
-        why_words = {"missing": "hashed", "unique": "by size"}
-        for p, s, why in sorted(res["missing_paths"], key=lambda x: -x[1]):
-            # A '|' in a name would split the row and shift the Why column.
-            cell = p.replace("|", "\\|")
-            fh.write(f"| {cell} | {s:,} | {why_words.get(why, why)} |\n")
+        # Decision order: what to act on first. "Not on any target" always
+        # shows, because its 0 is the verdict; the rest only when above 0.
+        section(fh, "Not on any target", merged("missing", "unique"), always=True)
+        section(fh, "Of which never read (unique size)", merged("unique"))
+        if res["missing_paths"]:
+            fh.write("## Every file not on a target\n\n")
+            fh.write("| Path | Bytes | Why |\n|---|---:|---|\n")
+            why_words = {"missing": "hashed", "unique": "by size"}
+            for p, s, why in sorted(res["missing_paths"], key=lambda x: -x[1]):
+                # A '|' in a name would split the row and shift the Why column.
+                cell = p.replace("|", "\\|")
+                fh.write(f"| {cell} | {s:,} | {why_words.get(why, why)} |\n")
+            fh.write("\n")
+        section(fh, "Not hashed yet", merged("unhashed"))
+        section(fh, "On a target (by content)", merged("present"))
 
 
 def main() -> int:
@@ -173,7 +184,7 @@ def main() -> int:
     out = Path(args.out) if args.out else (
         db.atlas_home() / "reports" / f"coverage-{datetime.now():%Y%m%d-%H%M}.md")
     write_report(res, out, drive(conn, src[0], with_uuid=True),
-                 ", ".join(drive(conn, t, with_uuid=False) for t in targets))
+                 ", ".join(drive(conn, t, with_uuid=True) for t in targets))
 
     # The answer first: what is not on a target, then what has no claim yet.
     b = res["buckets"]
