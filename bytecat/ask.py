@@ -231,7 +231,8 @@ def search(conn, query: str, *, limit: int = 20, kind: str = "", host: str = "",
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="search the bytecat catalog")
+    ap = argparse.ArgumentParser(prog="bytecat ask",
+                                 description="search the bytecat catalog")
     ap.add_argument("query", nargs="+")
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--kind", default="",

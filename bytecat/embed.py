@@ -203,7 +203,7 @@ def unmounted_files(conn) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(prog="bytecat embed",
         description="index files for semantic search with a local model (tier 3)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--kinds", default="",

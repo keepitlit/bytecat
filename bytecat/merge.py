@@ -130,7 +130,8 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="merge scanner NDJSON into the catalog")
+    ap = argparse.ArgumentParser(prog="bytecat merge",
+                                 description="merge scanner NDJSON into the catalog")
     ap.add_argument("path", nargs="?", help="NDJSON file (default: stdin)")
     ap.add_argument("--no-prune", action="store_true",
                     help="do not mark unseen files as missing (for partial scans)")

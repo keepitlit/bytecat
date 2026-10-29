@@ -192,7 +192,8 @@ def write_report(groups: list[dict], path: Path, *, top: int,
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat duplicate report (read-only)")
+    ap = argparse.ArgumentParser(prog="bytecat dupes",
+                                 description="bytecat duplicate report (read-only)")
     ap.add_argument("--min-bytes", type=int, default=1,
                     help="ignore groups reclaiming less than this")
     ap.add_argument("--cross-host-only", action="store_true")

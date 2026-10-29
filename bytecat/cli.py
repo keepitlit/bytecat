@@ -120,7 +120,8 @@ def cmd_pipeline(args) -> int:
         r = subprocess.run(cmd)
         if r.returncode != 0:
             # Each step commits per batch, so a re-run resumes where it stopped.
-            print(f"[bytecat] {name} failed, pipeline stopped; re-run to resume.",
+            # "fix it": re-running without a fix repeats the failure.
+            print(f"[bytecat] {name} failed; fix it, then re-run `bytecat pipeline` to resume",
                   file=sys.stderr)
             return r.returncode
     return 0
@@ -133,27 +134,31 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command",
                             title="commands")
 
+    # Workflow order: look, collect, then the tiers, then the answers.
+    def dispatched(*cmds):
+        for name, mod, helptext in cmds:
+            sp = sub.add_parser(name, help=helptext, add_help=False)
+            sp.set_defaults(_module=mod)
+
     sub.add_parser("status", help="summarise the catalog")
-
-    p = sub.add_parser("pipeline", help="run hash + extract + embed in order")
-    p.add_argument("--limit", type=int, default=0)
-
-    for name, mod, helptext in (
+    dispatched(
         ("scan", "bytecat.scan", "list files under paths; pipe into merge"),
         ("merge", "bytecat.merge", "add scan output to the catalog"),
+    )
+    p = sub.add_parser("pipeline", help="run hash + extract + embed in order")
+    p.add_argument("--limit", type=int, default=0)
+    dispatched(
         ("hash", "bytecat.hash", "hash file contents"),
         ("extract", "bytecat.extract", "read file metadata"),
         ("embed", "bytecat.embed", "index files for search"),
         ("enrich", "bytecat.enrich", "label files with a local LLM, up to --budget"),
         ("ask", "bytecat.ask", "search the catalog"),
-        ("eval", "bytecat.eval", "measure search quality"),
         ("dupes", "bytecat.report_dupes", "write the duplicate report"),
         ("coverage", "bytecat.report_coverage",
          "report a volume's files missing from the targets"),
         ("audit", "bytecat.audit", "re-check coverage or dupes against the disk"),
-    ):
-        sp = sub.add_parser(name, help=helptext, add_help=False)
-        sp.set_defaults(_module=mod)
+        ("eval", "bytecat.eval", "measure search quality"),
+    )
 
     # parse_known_args, not REMAINDER: REMAINDER stops collecting the moment the
     # first token looks like an option, so `bytecat enrich --budget 10` died as an

@@ -274,7 +274,7 @@ def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(prog="bytecat enrich",
         description="label files with a local model (tier 4)")
     ap.add_argument("--budget", type=int, default=200,
                     help="at most N files (default 200)")

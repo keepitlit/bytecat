@@ -410,7 +410,7 @@ def ingest(conn, path: str) -> tuple[int, int]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(prog="bytecat hash",
         description="hash file contents to find duplicates (tier 1)")
     ap.add_argument("--volume", default="", help="restrict to one drive: its UUID, label or mount")
     ap.add_argument("--workers", type=int, default=0)

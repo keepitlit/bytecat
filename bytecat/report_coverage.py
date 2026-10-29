@@ -160,7 +160,8 @@ def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="bytecat coverage report (read-only)")
+    ap = argparse.ArgumentParser(prog="bytecat coverage",
+                                 description="bytecat coverage report (read-only)")
     ap.add_argument("--source-volume", required=True)
     ap.add_argument("--target-volume", action="append", default=[])
     ap.add_argument("--target-host", action="append", default=[])

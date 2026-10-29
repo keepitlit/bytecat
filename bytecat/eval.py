@@ -133,7 +133,8 @@ def render(res: dict, baseline: Optional[dict] = None) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="measure bytecat retrieval quality")
+    ap = argparse.ArgumentParser(prog="bytecat eval",
+                                 description="measure bytecat retrieval quality")
     ap.add_argument("--json", default="", help="write results to this path")
     ap.add_argument("--baseline", default="",
                     help="MRR change vs a saved --json run")

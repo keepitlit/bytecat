@@ -389,7 +389,8 @@ def run_hash_list(path: str, root_override: str = "",
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    # Standalone on a NAS host (python3 scan.py) it keeps its own name.
+    ap = argparse.ArgumentParser(prog="bytecat scan" if __package__ else None,
         description="list files under each root as NDJSON for bytecat merge")
     ap.add_argument("roots", nargs="*")
     ap.add_argument("--host", default=platform.node().split(".")[0])

@@ -77,9 +77,7 @@ def connect(path: Optional[Path] = None, *, readonly: bool = False) -> sqlite3.C
         # corruption rather than "you have not indexed anything yet".
         if not p.exists():
             raise NoCatalog(
-                f"no catalog at {p} yet; start with:\n"
-                "    bytecat scan ~/Documents | bytecat merge"
-            )
+                f"no catalog at {p}; start with: bytecat scan ~/Documents | bytecat merge")
         conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=30.0)
     else:
         conn = sqlite3.connect(p, timeout=60.0, isolation_level=None)
