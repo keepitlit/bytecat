@@ -25,11 +25,20 @@ def cmd_status(args) -> int:
 
     # No online/offline figure: nothing ever marks a volume offline
     # (db.mark_volume_offline has no caller), so it would always equal the count.
-    hosts = conn.execute("""
-        SELECT h.name, COUNT(DISTINCT v.id) AS vols
-        FROM hosts h LEFT JOIN volumes v ON v.host_id = h.id
-        GROUP BY h.id ORDER BY h.name
+    vols = conn.execute("""
+        SELECT h.name host, v.uuid, v.label, v.last_mount, v.last_scan,
+               (SELECT COUNT(*) FROM files f
+                 WHERE f.volume_id = v.id AND f.state = 'present') n
+        FROM volumes v JOIN hosts h ON h.id = v.host_id
+        ORDER BY h.name, v.last_mount
     """).fetchall()
+
+    if not vols:
+        # A catalog file with nothing merged into it yet (pipeline on a fresh
+        # install creates one): the zero rows would read like a result.
+        print(f"nothing catalogued in {db.db_path()} yet. "
+              "Start with: bytecat scan ~/Documents | bytecat merge")
+        return 0
 
     tot = conn.execute("""
         SELECT COUNT(*) n,
@@ -54,29 +63,31 @@ def cmd_status(args) -> int:
     def gb(n): return f"{(n or 0)/1024**3:.1f} GB"
     present = tot["present"] or 0
 
-    print(f"catalog: {db.db_path()}")
-    if hosts:
-        print(f"files:   {present:,} present  ({gb(tot['bytes'])}), "
-              f"{tot['missing'] or 0:,} missing")
-        print()
-        print("hosts:")
-        for h in hosts:
-            print(f"  {h['name']:<20} {h['vols']} volume(s)")
-        print()
-        print("tiers:")
-        # Each row is named after the command that advances it.
-        for label, key in (("hashed", "t1"), ("extracted", "t2"),
-                           ("embedded", "t3"), ("enriched", "t4")):
-            done = tiers[key] or 0
-            pct = (100 * done / present) if present else 0
-            print(f"  {label:<14} {done:>10,} / {present:,}  ({pct:.1f}%)")
-        print()
-        print(f"duplicates: {dupes['groups']:,} groups, {gb(dupes['wasted'])} reclaimable")
-    else:
-        # A catalog file with nothing merged into it yet (pipeline on a fresh
-        # install creates one): the zero rows would read like a result.
-        print("nothing catalogued yet; start with:")
-        print("    bytecat scan ~/Documents | bytecat merge")
+    print(f"files:   {present:,} present  ({gb(tot['bytes'])}), "
+          f"{tot['missing'] or 0:,} missing")
+    print()
+    # One line per drive, led by its mount: scans on Linux or with
+    # --volume-uuid store no label, so a label column would be mostly blank.
+    # No cap: a "+N more" line would hide the drive being looked for.
+    host = None
+    for v in vols:
+        if v["host"] != host:
+            host = v["host"]
+            print(host)
+        label = f"  {v['label']}" if v["label"] else ""
+        scanned = (v["last_scan"] or "")[:10]
+        print(f"  {v['last_mount'] or '-'}{label}  {v['uuid']}  "
+              f"{v['n']:,} files  scanned {scanned}")
+    print()
+    print("progress:")
+    # Each row is named after the command that advances it.
+    for label, key in (("hash", "t1"), ("extract", "t2"),
+                       ("embed", "t3"), ("enrich", "t4")):
+        done = tiers[key] or 0
+        pct = (100 * done / present) if present else 0
+        print(f"  {label:<10} {done:>10,} / {present:,}  ({pct:.1f}%)")
+    print()
+    print(f"duplicates: {dupes['groups']:,} groups, {gb(dupes['wasted'])} reclaimable")
 
     recent = conn.execute("""
         SELECT stage, status, started_at, finished_at, n_seen, n_errors
