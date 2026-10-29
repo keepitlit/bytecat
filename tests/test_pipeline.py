@@ -294,6 +294,11 @@ def main() -> int:
         check("no source file removed", before == after)
         check("report file written",
               any((tmp / "data/reports").glob("*.md")))
+        reports = sorted((tmp / "data/reports").glob("*.md"))
+        if rep and reports:
+            body = reports[-1].read_text()
+            check("each group is listed once (the 3-way group's hash appears once)",
+                  body.count(rep["hash"]) == 1, f"count={body.count(rep['hash'])}")
 
         print("\n[tier 2/3 -- needs LM Studio + Chroma]")
         r = run([py, "-m", "bytecat.extract"], env)
