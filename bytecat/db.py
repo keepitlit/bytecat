@@ -278,6 +278,16 @@ FILE_COLUMNS = (
 )
 
 
+# Content changed => every derived tier is invalidated: the blob link and each
+# tier flag go back to their unprocessed value.
+_RESET_ON_CHANGE = ",\n".join(
+    f"{col} = CASE WHEN excluded.size_bytes != files.size_bytes"
+    f" OR excluded.mtime != files.mtime THEN {unset} ELSE files.{col} END"
+    for col, unset in (("blob_id", "NULL"), ("t1_hashed", 0), ("t2_meta", 0),
+                       ("t3_embedded", 0), ("t4_enriched", 0))
+)
+
+
 def upsert_files(conn: sqlite3.Connection, rows: Iterable[tuple],
                  run_id: int = 0) -> int:
     """Idempotent bulk ingest keyed on (volume_id, relpath).
@@ -303,22 +313,7 @@ def upsert_files(conn: sqlite3.Connection, rows: Iterable[tuple],
                 is_symlink = excluded.is_symlink,
                 state      = 'present',
                 last_seen  = datetime('now'),
-                -- content changed => every derived tier is invalidated
-                blob_id     = CASE WHEN excluded.size_bytes != files.size_bytes
-                                     OR excluded.mtime      != files.mtime
-                                   THEN NULL ELSE files.blob_id END,
-                t1_hashed   = CASE WHEN excluded.size_bytes != files.size_bytes
-                                     OR excluded.mtime      != files.mtime
-                                   THEN 0 ELSE files.t1_hashed END,
-                t2_meta     = CASE WHEN excluded.size_bytes != files.size_bytes
-                                     OR excluded.mtime      != files.mtime
-                                   THEN 0 ELSE files.t2_meta END,
-                t3_embedded = CASE WHEN excluded.size_bytes != files.size_bytes
-                                     OR excluded.mtime      != files.mtime
-                                   THEN 0 ELSE files.t3_embedded END,
-                t4_enriched = CASE WHEN excluded.size_bytes != files.size_bytes
-                                     OR excluded.mtime      != files.mtime
-                                   THEN 0 ELSE files.t4_enriched END""",
+                {_RESET_ON_CHANGE}""",
         rows,
     )
     return cur.rowcount
