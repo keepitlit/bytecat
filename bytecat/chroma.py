@@ -16,37 +16,24 @@ import os
 import urllib.error
 import urllib.request
 from typing import Any, Optional
-from urllib.parse import urlparse
+
+from .localonly import assert_local, opener
 
 DEFAULT_BASE = "http://127.0.0.1:8100"
 TENANT = "default_tenant"
 DATABASE = "default_database"
 COLLECTION = "bytecat_files"
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
 
 
-def _assert_local(url: str) -> None:
-    host = urlparse(url).hostname or ""
-    if host not in LOOPBACK:
-        raise RuntimeError(f"refusing non-loopback Chroma endpoint {host!r}")
-
-
-class _LocalOnlyRedirects(urllib.request.HTTPRedirectHandler):
-    """Vectors are derived from file content; the same guard applies here as to
-    the model endpoint. See the longer note in llm.py."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _assert_local(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-_OPENER = urllib.request.build_opener(_LocalOnlyRedirects)
+# Vectors are derived from file content, so the same guard applies here as to
+# the model endpoint; see localonly.py.
+_OPENER = opener("Chroma")
 
 
 class Chroma:
     def __init__(self, base: str = "", collection: str = ""):
         self.base = (base or os.environ.get("BYTECAT_CHROMA_BASE") or DEFAULT_BASE).rstrip("/")
-        _assert_local(self.base)
+        assert_local(self.base, "Chroma")
         # Overridable so the test suite never writes into the real collection.
         self.collection_name = (
             collection or os.environ.get("BYTECAT_CHROMA_COLLECTION") or COLLECTION
@@ -56,7 +43,7 @@ class Chroma:
     # -- plumbing ---------------------------------------------------------
 
     def _req(self, method: str, path: str, payload: Any = None) -> Any:
-        _assert_local(self.base)
+        assert_local(self.base, "Chroma")
         url = f"{self.base}{path}"
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(

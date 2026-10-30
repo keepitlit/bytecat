@@ -20,10 +20,10 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
-from urllib.parse import urlparse
+
+from .localonly import LocalOnlyError, assert_local, opener
 
 DEFAULT_BASE = "http://127.0.0.1:1234/v1"
-LOOPBACK = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
 
 EMBED_MODEL = os.environ.get("BYTECAT_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 # The chat model used by tier 4 (`enrich`) and `ask --smart`. There is no
@@ -34,10 +34,6 @@ CHAT_MODEL = os.environ.get("BYTECAT_CHAT_MODEL", "")
 # Set BYTECAT_LLM_AUTOSTART=1 to let `ensure_up()` run `lms server start`
 # (LM Studio only). Off by default: a public tool should not launch apps.
 AUTOSTART = os.environ.get("BYTECAT_LLM_AUTOSTART", "") == "1"
-
-
-class LocalOnlyError(RuntimeError):
-    """Raised when something tries to point the pipeline off-box."""
 
 
 class LMStudioDown(RuntimeError):
@@ -68,31 +64,8 @@ def note_once(line: str) -> None:
         print(line, file=sys.stderr)
 
 
-def _assert_local(url: str) -> None:
-    host = urlparse(url).hostname or ""
-    if host not in LOOPBACK:
-        # A hard invariant, not a default: no setting relaxes it.
-        raise LocalOnlyError(f"refusing non-loopback model endpoint {host!r}")
-
-
-class _LocalOnlyRedirects(urllib.request.HTTPRedirectHandler):
-    """Re-apply the guard to every redirect hop.
-
-    urllib follows 301/302/303 by itself without consulting us, so checking only
-    the base URL leaves a gap: a process holding the model port could bounce the
-    request off-box. Python drops the request body on those codes (and refuses
-    307/308 outright for a POST), so file content cannot ride along -- but the
-    request itself would still leave, which is enough to beacon. Refuse instead.
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _assert_local(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-# Every request in this module goes through here, never through the module-level
-# urlopen, which would use the default redirect handler.
-_OPENER = urllib.request.build_opener(_LocalOnlyRedirects)
+# Every request in this module goes through here; see localonly.py.
+_OPENER = opener("model")
 
 
 def reply_text(message: dict) -> str:
@@ -111,13 +84,13 @@ def reply_text(message: dict) -> str:
 class LMStudio:
     def __init__(self, base: str = "", timeout: float = 120.0):
         self.base = (base or os.environ.get("BYTECAT_LLM_BASE") or DEFAULT_BASE).rstrip("/")
-        _assert_local(self.base)
+        assert_local(self.base, "model")
         self.timeout = timeout
 
     # -- plumbing ---------------------------------------------------------
 
     def _post(self, path: str, payload: dict, *, retries: int = 3) -> dict:
-        _assert_local(self.base)
+        assert_local(self.base, "model")
         url = f"{self.base}{path}"
         body = json.dumps(payload).encode()
         last: Optional[Exception] = None
@@ -144,7 +117,7 @@ class LMStudio:
     # -- lifecycle --------------------------------------------------------
 
     def models(self) -> list[str]:
-        _assert_local(self.base)
+        assert_local(self.base, "model")
         try:
             with _OPENER.open(f"{self.base}/models", timeout=10) as r:
                 return [m["id"] for m in json.loads(r.read()).get("data", [])]
