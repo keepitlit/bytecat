@@ -14,7 +14,7 @@ Nothing is ever deleted. Nothing is ever uploaded. Proven on a catalogue of 825,
 across 10 TB and three hosts.
 
 fclones, rmlint and czkawka find duplicates on one machine. bytecat is for the
-person with a NAS, two laptops and a drawer of external drives who wants to know what is
+person with a NAS and a drawer of external drives who wants to know what is
 safe to unplug.
 
 ## Install
