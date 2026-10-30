@@ -14,7 +14,7 @@ survives to threshold against -- but a per-candidate verdict does the same job
 without re-plumbing the fusion.
 
 Only metadata is sent: path, kind, size, title, gist. No file content, and it
-goes to LM Studio on loopback like everything else (see llm.py).
+goes to the model server on loopback like everything else (see llm.py).
 
 Degrades rather than fails: if the model is unreachable or answers with
 something unusable, the caller keeps the fused order.

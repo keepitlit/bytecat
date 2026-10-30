@@ -7,7 +7,7 @@ opposite. Results are fused with Reciprocal Rank Fusion, which needs no score
 calibration between two very differently-scaled rankers.
 
 Degrades rather than fails: with Chroma down you still get keyword results, and
-with LM Studio down you still get keyword results.
+with the model server down you still get keyword results.
 
 Output is paths and metadata. Never file content -- that is the whole point of
 building this locally, and it also keeps results safe to paste into a session.

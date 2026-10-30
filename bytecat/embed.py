@@ -5,7 +5,7 @@ Text is extracted, embedded, and discarded in the same breath -- it is never
 written to the catalog or to Chroma. What persists is a 768-dim vector, a
 character count, and a checksum that lets a re-run skip unchanged files.
 
-Runs against LM Studio on loopback. If the server is down the stage stops with
+Runs against the local model server on loopback. If the server is down the stage stops with
 an error rather than degrading to anything remote.
 
 Usage:

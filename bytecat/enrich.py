@@ -10,7 +10,7 @@ EXIF sitting in "2024/Italy" does not need a language model to be findable; a
 file called "Scan_0043.pdf" in "Downloads" does. Spending the budget on the
 second group is the entire idea.
 
-Everything runs against LM Studio on loopback -- see llm.py for the invariant.
+Everything runs against the model server on loopback -- see llm.py for the invariant.
 
 Usage:
     enrich.py --budget 200

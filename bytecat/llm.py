@@ -1,9 +1,10 @@
-"""LM Studio client. Local only, by construction.
+"""Client for an OpenAI-compatible model server (LM Studio by default). Local
+only, by construction.
 
 The hard requirement behind this whole project is that personal file content
 never leaves the machine. So this module refuses to talk to anything that is not
-a loopback address, and there is no configuration option that relaxes that. If
-LM Studio is down the pipeline stops -- it must never quietly fall back to a
+a loopback address (the guard is in localonly.py), and there is no configuration
+option that relaxes that. If the server is down the pipeline stops -- it must never quietly fall back to a
 hosted endpoint.
 
 Stdlib urllib rather than `requests`/`openai`: fewer dependencies, and no client
