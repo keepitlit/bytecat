@@ -29,7 +29,7 @@ import sys
 from typing import Optional
 
 from . import db, extract
-from .llm import CHAT_MODEL, LMStudio, LMStudioDown, reply_text
+from .llm import CHAT_MODEL, LMStudio, LMStudioDown
 
 # Names that carry no information -- camera dumps, scanner output, OS defaults.
 GENERIC_NAME = re.compile(
@@ -194,26 +194,11 @@ def enrich_image(lm: LMStudio, row: dict) -> Optional[dict]:
     if not mime:
         return None
 
-    payload = {
-        "model": CHAT_MODEL,
-        "messages": [
-            {"role": "system", "content": VISION_SYSTEM},
-            {"role": "user", "content": [
-                {"type": "text", "text": f"path: {row['relpath']}"},
-                {"type": "image_url",
-                 "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
-            ]},
-        ],
-        "max_tokens": 200,
-        "temperature": 0.1,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "atlas_label", "strict": True,
-                            "schema": LABEL_SCHEMA},
-        },
-    }
-    out = lm._post("/chat/completions", payload)
-    return parse_reply(reply_text(out["choices"][0]["message"]))
+    content = [
+        {"type": "text", "text": f"path: {row['relpath']}"},
+        {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
+    ]
+    return parse_reply(lm.chat(VISION_SYSTEM, content, max_tokens=200, schema=LABEL_SCHEMA))
 
 
 def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:

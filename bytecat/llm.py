@@ -176,7 +176,7 @@ class LMStudio:
         data = sorted(out["data"], key=lambda d: d.get("index", 0))
         return [d["embedding"] for d in data]
 
-    def chat(self, system: str, user: str, *, model: str = "",
+    def chat(self, system: str, user: str | list[dict], *, model: str = "",
              max_tokens: int = 300, temperature: float = 0.1,
              schema: Optional[dict] = None) -> str:
         """Chat completion, optionally constrained to a JSON schema.
@@ -185,6 +185,9 @@ class LMStudio:
         OpenAI's older `json_object` form outright. Constraining beats hinting
         anyway -- a 4B model asked nicely for JSON returns fenced Markdown about
         a third of the time.
+
+        `user` is text, or a list of OpenAI content parts (text plus an image
+        for a vision model).
         """
         model = model or CHAT_MODEL
         if not model:
