@@ -101,8 +101,26 @@ def connect(path: Optional[Path] = None, *, readonly: bool = False) -> sqlite3.C
     return conn
 
 
+def fts_ddl() -> str:
+    """The keyword half of the hybrid search. Vectors live in Chroma; this is the
+    lexical complement, and it means search still works with Chroma down.
+
+    Contentless (the text lives in `files`/`extractions`, no second copy) with
+    contentless_delete, so a row can be refreshed in place when enrichment adds a
+    title. That option needs SQLite 3.43. Older builds (Debian 12, Ubuntu 22.04,
+    some Python 3.9 builds) get an ordinary FTS5 table instead, which can delete a
+    row too and keeps its own copy of the four columns: paths, names and labels the
+    catalog already holds, never extracted file text.
+    """
+    opts = (",\n    content='',\n    contentless_delete=1"
+            if sqlite3.sqlite_version_info >= (3, 43, 0) else "")
+    return ("CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(\n"
+            f"    relpath,\n    name,\n    title,\n    gist{opts}\n)")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_PATH.read_text())
+    conn.execute(fts_ddl())
     _migrate_columns(conn)
     _migrate_fts(conn)
 
@@ -115,18 +133,24 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_fts(conn: sqlite3.Connection) -> None:
-    """Rebuild files_fts if it predates the contentless_delete option.
+    """Rebuild files_fts when it is not the table fts_ddl() would create now.
 
     The first cut of the schema created a plain contentless table, which cannot
-    DELETE a row -- so refreshing a file's entry after enrichment failed. Catch
-    catalogs built with that version and rebuild the index in place.
+    DELETE a row -- so refreshing a file's entry after enrichment failed. A
+    catalog first built on an older SQLite holds the ordinary table, which a
+    newer one can swap for the contentless kind. Either way the index is rebuilt
+    in place from the catalog.
     """
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE name = 'files_fts'"
     ).fetchone()
-    if row and "contentless_delete" not in (row[0] or ""):
+    sql = "".join((row[0] if row else "").split())
+    want = "contentless_delete" in fts_ddl()
+    has = "contentless_delete" in sql
+    plain_contentless = "content=''" in sql and not has
+    if row and (want != has or plain_contentless):
         conn.execute("DROP TABLE files_fts")
-        conn.executescript(SCHEMA_PATH.read_text())
+        conn.execute(fts_ddl())
         fts_sync(conn)
 
 

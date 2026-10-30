@@ -121,19 +121,8 @@ CREATE TABLE IF NOT EXISTS extractions (
 CREATE INDEX IF NOT EXISTS idx_extractions_kind ON extractions(kind);
 CREATE INDEX IF NOT EXISTS idx_extractions_date ON extractions(captured_at);
 
--- Keyword half of the hybrid search. Vectors live in Chroma; this is the
--- lexical complement, and it means search still works with Chroma down.
--- Contentless (the text lives in `files`/`extractions`, no second copy) but with
--- contentless_delete so a row can be refreshed in place when enrichment adds a
--- title. Requires SQLite >= 3.43; verified 3.53 here.
-CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
-    relpath,
-    name,
-    title,
-    gist,
-    content='',
-    contentless_delete=1
-);
+-- files_fts, the keyword half of the hybrid search, is created by db.init_db:
+-- its options depend on the SQLite version (db.fts_ddl).
 
 -- Append-only record of every pass, so a long run's history is inspectable.
 CREATE TABLE IF NOT EXISTS runs (
