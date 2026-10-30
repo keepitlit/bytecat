@@ -204,7 +204,7 @@ class LMStudio:
         if schema:
             payload["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"name": "atlas_label", "strict": True,
+                "json_schema": {"name": "bytecat_label", "strict": True,
                                 "schema": schema},
             }
         out = self._post("/chat/completions", payload)

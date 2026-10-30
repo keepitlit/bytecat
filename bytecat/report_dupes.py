@@ -219,9 +219,7 @@ def main() -> int:
         ([f"--min-bytes {args.min_bytes}"] if args.min_bytes > 1 else [])
         + (["--cross-host-only"] if args.cross_host_only else []))
 
-    out = Path(args.out) if args.out else (
-        db.atlas_home() / "reports" / f"duplicates-{datetime.now():%Y%m%d-%H%M}.md"
-    )
+    out = db.report_path("duplicates", args.out)
     s = write_report(groups, out, top=args.top, cross_host_only=args.cross_host_only,
                      filters=filters, n_unhashed=n_unhashed)
 

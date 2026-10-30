@@ -182,8 +182,7 @@ def main() -> int:
         sys.exit("[bytecat] give --target-host or --target-volume (not the source)")
 
     res = classify(conn, src[0], targets)
-    out = Path(args.out) if args.out else (
-        db.atlas_home() / "reports" / f"coverage-{datetime.now():%Y%m%d-%H%M}.md")
+    out = db.report_path("coverage", args.out)
     write_report(res, out, drive(conn, src[0], with_uuid=True),
                  ", ".join(drive(conn, t, with_uuid=True) for t in targets))
 

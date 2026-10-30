@@ -303,7 +303,7 @@ def _prefix_clause(alias: str, prefix: str) -> tuple[str, list]:
     return f"substr({alias}.relpath, 1, ?) = ?", [len(p), p]
 
 
-def atlas_coverage_claim(conn, src: Scope, tgt: Scope) -> dict[str, dict]:
+def catalog_coverage_claim(conn, src: Scope, tgt: Scope) -> dict[str, dict]:
     """What bytecat asserts about every source file: is its content on the target?
 
     Mirrors report_coverage.classify()'s bucket semantics exactly -- present /
@@ -362,12 +362,12 @@ def cmd_coverage(args) -> int:
     t_hash, t_err = hash_entries(t_entries, workers, "target")
 
     target_contents = set(t_hash.values())
-    claim = atlas_coverage_claim(conn, src, tgt)
+    claim = catalog_coverage_claim(conn, src, tgt)
 
     # Cross-tabulate over files BOTH the walk and the catalog know about. The
     # two off-diagonal cells are the entire product of this run.
     cells = {"agree_present": [], "agree_absent": [],
-             "atlas_over": [], "atlas_under": []}
+             "catalog_over": [], "catalog_under": []}
     for rel, sha in s_hash.items():
         c = claim.get(rel)
         if c is None:
@@ -378,14 +378,14 @@ def cmd_coverage(args) -> int:
         elif not audit_present and not c["present"]:
             cells["agree_absent"].append((rel, c["size"], c["bucket"]))
         elif c["present"] and not audit_present:
-            cells["atlas_over"].append((rel, c["size"]))
+            cells["catalog_over"].append((rel, c["size"]))
         else:
-            cells["atlas_under"].append((rel, c["size"], c["bucket"]))
+            cells["catalog_under"].append((rel, c["size"], c["bucket"]))
 
     on_disk_only = sorted(set(s_hash) - set(claim))
     in_catalog_only = sorted(set(claim) - set(s_hash))
 
-    findings = len(cells["atlas_over"]) + len(cells["atlas_under"])
+    findings = len(cells["catalog_over"]) + len(cells["catalog_under"])
     out = report_path(args.out, "coverage")
     # Source files left out of the cross-tab: hashed but not in the catalog,
     # or found by the walk but unreadable.
@@ -399,7 +399,7 @@ def cmd_coverage(args) -> int:
     # also needs every source file compared: audit walks hidden directories
     # that scan skips, and a file the catalog never saw is one no coverage
     # report covered -- the case that loses data when a drive is retired.
-    over, under = len(cells["atlas_over"]), len(cells["atlas_under"])
+    over, under = len(cells["catalog_over"]), len(cells["catalog_under"])
     if not (over or under or uncompared):
         print("[bytecat] audit: catalog confirmed")
     if over:
@@ -415,8 +415,8 @@ def cmd_coverage(args) -> int:
     tally([
         ("agree, content present on target", len(cells["agree_present"]), ""),
         ("not on target, bytecat did not say copied", len(cells["agree_absent"]), ""),
-        ("DISAGREE, bytecat says copied, disk says no", len(cells["atlas_over"]), ""),
-        ("DISAGREE, disk has it, bytecat did not say so", len(cells["atlas_under"]), ""),
+        ("DISAGREE, bytecat says copied, disk says no", len(cells["catalog_over"]), ""),
+        ("DISAGREE, disk has it, bytecat did not say so", len(cells["catalog_under"]), ""),
         ("on disk, not in catalog (source)", len(on_disk_only), ""),
         ("in catalog, not found or not read (source)", len(in_catalog_only), ""),
     ])
@@ -559,9 +559,7 @@ def proves() -> str:
 
 
 def report_path(explicit: str, kind: str) -> Path:
-    if explicit:
-        return Path(explicit)
-    return db.atlas_home() / "reports" / f"audit-{kind}-{datetime.now():%Y%m%d-%H%M}.md"
+    return db.report_path(f"audit-{kind}", explicit)
 
 
 def _table(fh, header: str, rows, cols: str) -> None:
@@ -580,7 +578,7 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w") as fh:
         fh.write("# Audit: coverage\n\n")
-        if cells["atlas_over"] or cells["atlas_under"]:
+        if cells["catalog_over"] or cells["catalog_under"]:
             fh.write("**Disk and catalog disagree; don't act on the coverage report "
                      "until resolved.**\n\n")
         elif uncompared:
@@ -600,13 +598,13 @@ def write_coverage_report(out: Path, src, tgt, cells, on_disk_only,
         fh.write("## Catalog against disk\n\n")
         fh.write("| | bytecat: on target | bytecat: did not say |\n|---|---:|---:|\n")
         fh.write(f"| **disk: on target** | {len(cells['agree_present']):,} "
-                 f"| {len(cells['atlas_under']):,} |\n")
-        fh.write(f"| **disk: not on target** | **{len(cells['atlas_over']):,}** "
+                 f"| {len(cells['catalog_under']):,} |\n")
+        fh.write(f"| **disk: not on target** | **{len(cells['catalog_over']):,}** "
                  f"| {len(cells['agree_absent']):,} |\n\n")
 
-        _table(fh, "bytecat says copied, disk says no", cells["atlas_over"],
+        _table(fh, "bytecat says copied, disk says no", cells["catalog_over"],
                "Path | Bytes")
-        _table(fh, "Disk has it, bytecat did not say so", cells["atlas_under"],
+        _table(fh, "Disk has it, bytecat did not say so", cells["catalog_under"],
                "Path | Bytes | bytecat said")
         _table(fh, "On disk, not in the catalog (source)",
                [(p,) for p in on_disk_only], "Path")

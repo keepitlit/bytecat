@@ -15,6 +15,7 @@ import platform
 import sqlite3
 import sys
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
@@ -48,7 +49,7 @@ for _kind, _exts in {
         KIND_BY_EXT[_e] = _kind
 
 
-def atlas_home() -> Path:
+def data_home() -> Path:
     """Directory holding all catalog state. Keep it out of synced folders."""
     env = os.environ.get("BYTECAT_HOME")
     root = Path(env).expanduser() if env else Path.home() / ".local/share/bytecat"
@@ -57,7 +58,15 @@ def atlas_home() -> Path:
 
 
 def db_path() -> Path:
-    return atlas_home() / "catalog.db"
+    return data_home() / "catalog.db"
+
+
+def report_path(name: str, explicit: str = "") -> Path:
+    """Where a report goes: `explicit` if given (--out), else a timestamped
+    file under data_home()/reports."""
+    if explicit:
+        return Path(explicit)
+    return data_home() / "reports" / f"{name}-{datetime.now():%Y%m%d-%H%M}.md"
 
 
 class NoCatalog(RuntimeError):
