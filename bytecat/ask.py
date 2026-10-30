@@ -29,7 +29,7 @@ from typing import Optional
 from . import db
 from .chroma import Chroma
 from .rerank import rerank
-from .llm import LMStudio, LMStudioDown, failure_reason, note_once
+from .llm import ModelServer, ModelServerDown, failure_reason, note_once
 
 RRF_K = 60  # standard damping constant; larger = flatter contribution by rank
 
@@ -80,12 +80,12 @@ def keyword_search(conn, query: str, limit: int) -> list[int]:
 
 def vector_search(query: str, limit: int) -> list[int]:
     try:
-        lm = LMStudio()
+        lm = ModelServer()
         if not lm.models():
             # One fast probe. embed() retries with back-off for a model that is
             # still loading, which is right for the pipeline and wrong for an
             # interactive search against a server that is simply off.
-            raise LMStudioDown(f"no model server or model at {lm.base}")
+            raise ModelServerDown(f"no model server or model at {lm.base}")
         vec = lm.embed([query])[0]
         hits = Chroma().query(vec, n=limit)
         return [int(i) for i, _dist, _meta in hits]

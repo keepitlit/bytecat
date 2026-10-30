@@ -23,7 +23,7 @@ from typing import Optional
 
 from . import db, extract
 from .chroma import Chroma
-from .llm import LMStudio, LMStudioDown
+from .llm import ModelServer, ModelServerDown
 
 BATCH = 32                  # embedding requests per call
 MAX_EMBED_CHARS = 8000      # nomic-embed's useful context
@@ -95,7 +95,7 @@ def pending(conn, kinds: Optional[list[str]], limit: int) -> list[dict]:
 
 
 def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
-    lm = LMStudio()
+    lm = ModelServer()
     lm.ensure_up()
     chroma = Chroma()
     if not chroma.heartbeat():
@@ -118,7 +118,7 @@ def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
             return
         try:
             vectors = lm.embed([b["text"] for b in buf])
-        except LMStudioDown:
+        except ModelServerDown:
             raise
         except Exception as e:
             with db.transaction(conn):
@@ -215,7 +215,7 @@ def main() -> int:
         s = run(conn, kinds=[k for k in args.kinds.split(",") if k] or None,
                 limit=args.limit)
     except RuntimeError as e:
-        # LMStudioDown, LocalOnlyError and the Chroma errors each name what
+        # ModelServerDown, LocalOnlyError and the Chroma errors each name what
         # failed and what to do; print that line instead of a traceback. The
         # exit code stays 1, as for the uncaught exception.
         print(f"[bytecat] {e}", file=sys.stderr)

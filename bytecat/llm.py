@@ -37,14 +37,14 @@ CHAT_MODEL = os.environ.get("BYTECAT_CHAT_MODEL", "")
 AUTOSTART = os.environ.get("BYTECAT_LLM_AUTOSTART", "") == "1"
 
 
-class LMStudioDown(RuntimeError):
+class ModelServerDown(RuntimeError):
     pass
 
 
 def failure_reason(e: BaseException) -> str:
     """What to print when a model or Chroma call fails.
 
-    bytecat's own errors (LocalOnlyError, LMStudioDown and the RuntimeErrors
+    bytecat's own errors (LocalOnlyError, ModelServerDown and the RuntimeErrors
     raised here and in chroma.py) carry a message that names the cause and the
     fix. Anything else -- a KeyError or JSONDecodeError from a malformed reply --
     prints its class name, because str(KeyError('data')) is just "'data'".
@@ -82,7 +82,7 @@ def reply_text(message: dict) -> str:
            (message.get("reasoning_content") or "").strip()
 
 
-class LMStudio:
+class ModelServer:
     def __init__(self, base: str = "", timeout: float = 120.0):
         self.base = (base or os.environ.get("BYTECAT_LLM_BASE") or DEFAULT_BASE).rstrip("/")
         assert_local(self.base, "model")
@@ -113,7 +113,7 @@ class LMStudio:
                 # A model being JIT-loaded can take a while on the first call.
                 time.sleep(2 * (attempt + 1))
 
-        raise LMStudioDown(f"{url} unreachable: {last}")
+        raise ModelServerDown(f"{url} unreachable: {last}")
 
     # -- lifecycle --------------------------------------------------------
 
@@ -145,13 +145,13 @@ class LMStudio:
         # "or model": models() also returns [] for a running server that lists
         # no models, so the message cannot tell the two apart.
         if not autostart:
-            raise LMStudioDown(
+            raise ModelServerDown(
                 f"no model server or model at {self.base}; "
                 f"start one or set BYTECAT_LLM_BASE")
 
         lms = os.path.expanduser("~/.lmstudio/bin/lms")
         if not os.path.exists(lms):
-            raise LMStudioDown(f"no model server or model at {self.base}; {lms} not found")
+            raise ModelServerDown(f"no model server or model at {self.base}; {lms} not found")
         r = subprocess.run([lms, "server", "start"], capture_output=True, timeout=60)
         for _ in range(10):
             time.sleep(2)
@@ -159,7 +159,7 @@ class LMStudio:
             if models:
                 return models
         err = (r.stderr or b"").decode(errors="replace").strip()
-        raise LMStudioDown(
+        raise ModelServerDown(
             f"still no model server or model at {self.base} after {lms} server start"
             + (f": {err}" if err else "")
         )
@@ -192,7 +192,7 @@ class LMStudio:
         """
         model = model or CHAT_MODEL
         if not model:
-            raise LMStudioDown(f"BYTECAT_CHAT_MODEL not set; pick one from {self.base}/models")
+            raise ModelServerDown(f"BYTECAT_CHAT_MODEL not set; pick one from {self.base}/models")
         payload: dict[str, Any] = {
             "model": model,
             "messages": [

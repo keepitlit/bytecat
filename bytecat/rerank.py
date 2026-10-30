@@ -26,7 +26,7 @@ import json
 import re
 from typing import Optional
 
-from .llm import LMStudio, failure_reason, note_once
+from .llm import ModelServer, failure_reason, note_once
 
 SYSTEM = (
     "You rank file-search results. You are given a user's query and a numbered "
@@ -134,7 +134,7 @@ def parse_verdicts(raw: str, valid: set[int]) -> dict[int, tuple[bool, int]]:
 
 
 def rerank(query: str, results: list[dict], *,
-           lm: Optional[LMStudio] = None) -> list[dict]:
+           lm: Optional[ModelServer] = None) -> list[dict]:
     """Return `results` reordered by judged relevance. Never drops a file.
 
     Judged-irrelevant candidates are demoted below every relevant one rather
@@ -149,7 +149,7 @@ def rerank(query: str, results: list[dict], *,
     valid = {r["id"] for r in pool}
 
     try:
-        lm = lm or LMStudio()
+        lm = lm or ModelServer()
         raw = lm.chat(SYSTEM, f"query: {query}\n\ncandidates:\n{candidate_block(pool)}",
                       max_tokens=MAX_TOKENS, schema=RERANK_SCHEMA)
     except Exception as e:

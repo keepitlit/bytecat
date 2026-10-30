@@ -72,7 +72,7 @@ CONFIG = cb.Config(always_calls=frozenset({
     "write", "add", "_table",         # report lines: fh.write, report_dupes' add, audit's tables
     "exit", "SystemExit", "error",    # sys.exit("…") and ap.error("…") print their message
     # Domain errors whose message the commands print as "[bytecat] {e}".
-    "RuntimeError", "NoCatalog", "LMStudioDown", "LocalOnlyError",
+    "RuntimeError", "NoCatalog", "ModelServerDown", "LocalOnlyError",
 }))
 
 # Lists pinned by count, so adding to one shows in two places in the diff.
@@ -161,7 +161,7 @@ def part_a_read():
     print("a: what is read")
     check("print, eprint, help=, errors and sys.exit, however short",
           read('print("ok")\neprint("[bytecat] UUID")\nap.add_argument("-x", help="UUID")\n'
-               'raise LMStudioDown("no model")\nsys.exit("gone")\nap.error("no roots")')
+               'raise ModelServerDown("no model")\nsys.exit("gone")\nap.error("no roots")')
           == ["ok", "[bytecat] UUID", "UUID", "no model", "gone", "no roots"])
     check("a const or return value only when it is prose",
           read('HINT = "start one or set BYTECAT_LLM_BASE"\nKINDS = "pdf docx xlsx epub"\n'
@@ -268,7 +268,7 @@ def _chain(words):
 SHAPES = [
     ("print", lambda w: f"print({_f(w)}, file=sys.stderr)"),
     ("a help= keyword", lambda w: f'ap.add_argument("--x", help={_f(w)})'),
-    ("a raised error", lambda w: f"raise LMStudioDown({_f(w)})"),
+    ("a raised error", lambda w: f"raise ModelServerDown({_f(w)})"),
     ("sys.exit", lambda w: f"sys.exit({_f(w)})"),
     ("a report line", lambda w: f"fh.write({_f(w + chr(10))})"),
     ("a const", lambda w: f"NOTE = {_f(w)}"),

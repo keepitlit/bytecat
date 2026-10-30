@@ -127,10 +127,10 @@ def check_egress_invariants(tmp: Path) -> None:
     for base in ("http://evil.example.com/v1", "http://127.0.0.1.evil.com/v1",
                  "http://user@evil.example.com/v1"):
         try:
-            llm.LMStudio(base=base)
-            check(f"LMStudio refuses {base}", False, "constructed anyway")
+            llm.ModelServer(base=base)
+            check(f"ModelServer refuses {base}", False, "constructed anyway")
         except llm.LocalOnlyError:
-            check(f"LMStudio refuses {base}", True)
+            check(f"ModelServer refuses {base}", True)
     try:
         chroma_mod.Chroma(base="http://evil.example.com")
         check("Chroma refuses non-loopback base", False, "constructed anyway")
@@ -156,7 +156,7 @@ def check_egress_invariants(tmp: Path) -> None:
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        lm = llm.LMStudio(base=f"http://127.0.0.1:{port}/v1", timeout=5)
+        lm = llm.ModelServer(base=f"http://127.0.0.1:{port}/v1", timeout=5)
         try:
             lm.chat("s", "u", model="any")
             check("off-box redirect refused", False, "request was followed")

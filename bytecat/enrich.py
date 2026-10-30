@@ -29,7 +29,7 @@ import sys
 from typing import Optional
 
 from . import db, extract
-from .llm import CHAT_MODEL, LMStudio, LMStudioDown
+from .llm import CHAT_MODEL, ModelServer, ModelServerDown
 
 # Names that carry no information -- camera dumps, scanner output, OS defaults.
 GENERIC_NAME = re.compile(
@@ -162,14 +162,14 @@ def parse_reply(raw: str) -> Optional[dict]:
     }
 
 
-def enrich_text(lm: LMStudio, row: dict) -> Optional[dict]:
+def enrich_text(lm: ModelServer, row: dict) -> Optional[dict]:
     body = extract.extract_text(row["path"], row["ext"], row["size"]) or ""
     body = " ".join(body.split())[:EXCERPT_CHARS]
     user = f"path: {row['relpath']}\nfilename: {row['name']}\n\nexcerpt:\n{body}"
     return parse_reply(lm.chat(SYSTEM, user, max_tokens=220, schema=LABEL_SCHEMA))
 
 
-def enrich_image(lm: LMStudio, row: dict) -> Optional[dict]:
+def enrich_image(lm: ModelServer, row: dict) -> Optional[dict]:
     """Multimodal path. Requires CHAT_MODEL to be vision-capable; a text-only
     model returns an error and the row falls back to path + EXIF."""
     if row["size"] > VISION_MAX_BYTES:
@@ -193,10 +193,10 @@ def enrich_image(lm: LMStudio, row: dict) -> Optional[dict]:
 
 
 def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:
-    lm = LMStudio()
+    lm = ModelServer()
     lm.ensure_up()
     if not CHAT_MODEL:
-        raise LMStudioDown("set BYTECAT_CHAT_MODEL to a model your server has loaded")
+        raise ModelServerDown("set BYTECAT_CHAT_MODEL to a model your server has loaded")
 
     rows = candidates(conn, kinds, budget, vision)
     stats = {"seen": len(rows), "enriched": 0, "failed": 0}
@@ -210,7 +210,7 @@ def run(conn, *, budget: int, kinds: Optional[list[str]], vision: bool) -> dict:
     for i, row in enumerate(rows, 1):
         try:
             result = enrich_image(lm, row) if vision else enrich_text(lm, row)
-        except LMStudioDown:
+        except ModelServerDown:
             # Rows done so far are already marked, so a re-run continues.
             print(f"[bytecat] model server at {lm.base} stopped responding; "
                   f"re-run to continue", file=sys.stderr)
@@ -269,7 +269,7 @@ def main() -> int:
                 kinds=[k for k in args.kinds.split(",") if k] or None,
                 vision=args.vision)
     except RuntimeError as e:
-        # LMStudioDown and LocalOnlyError name what failed and what to do; print
+        # ModelServerDown and LocalOnlyError name what failed and what to do; print
         # that line instead of a traceback. The exit code stays 1.
         print(f"[bytecat] {e}", file=sys.stderr)
         return 1
