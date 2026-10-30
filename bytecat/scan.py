@@ -235,7 +235,6 @@ def walk(root: str, *, skip_hidden: bool, min_size: int, descend_bundles: bool =
     from readdir, which matters enormously at millions of entries.
     """
     stack = [root]
-    seen_dirs: set[tuple[int, int]] = set()
 
     while stack:
         cur = stack.pop()

@@ -263,9 +263,6 @@ class Scope:
         self.vol_id, self.uuid, self.mount = vol_id, uuid, mount
         self.prefix, self.root = prefix, root
 
-    def catalog_rel(self, rel: str) -> str:
-        return key(f"{self.prefix}/{rel}" if self.prefix else rel)
-
     def __str__(self) -> str:
         return f"{self.uuid}:{self.prefix or '.'} ({self.root})"
 

@@ -57,7 +57,6 @@ def sql(home, statements):
 
 
 def audit(home, *args):
-    out = ROOT / "unused"
     r = subprocess.run([sys.executable, "-m", "bytecat.audit", *args],
                        cwd=ROOT, env=env_for(home), capture_output=True, text=True)
     report = ""

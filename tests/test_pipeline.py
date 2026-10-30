@@ -292,7 +292,6 @@ def main() -> int:
 
         from bytecat.report_dupes import collect
         groups = collect(db.connect(readonly=True), min_bytes=1, cross_host_only=False)
-        by_size = {g["size"]: g for g in groups}
 
         rep = next((g for g in groups if g["n_copies"] == 3), None)
         check("3-way cross-host duplicate found", rep is not None)

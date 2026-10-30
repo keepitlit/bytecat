@@ -14,7 +14,6 @@ import os
 import platform
 import sqlite3
 import sys
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional

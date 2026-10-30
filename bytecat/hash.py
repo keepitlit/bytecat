@@ -178,7 +178,7 @@ def adopt_by_inode(conn, volume_ids: list[int]) -> int:
     if not volume_ids:
         return 0
     ph = ",".join("?" * len(volume_ids))
-    donor = f"""SELECT g.blob_id FROM files g
+    donor = """SELECT g.blob_id FROM files g
                  WHERE g.volume_id  = f.volume_id
                    AND g.inode      = f.inode
                    AND g.mtime      = f.mtime

@@ -15,7 +15,7 @@ the WRONG blob. That is true with the inode cache and equally true without it --
 the relpath cache in db.upsert_files has always had it -- and the assertion below
 is what stops that being quietly attributed to this change.
 """
-import os, re, shutil, subprocess, sys, tempfile, time
+import os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

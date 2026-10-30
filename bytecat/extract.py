@@ -22,7 +22,7 @@ import json
 import os
 import subprocess
 import sys
-from typing import Iterator, Optional
+from typing import Optional
 
 from . import db
 
@@ -42,7 +42,6 @@ TEXT_TIMEOUT = 60          # a single pathological PDF must not wedge the pass
 MAX_TEXT_BYTES = 200_000   # embedding context is finite; the head is the useful part
 
 MEDIA_KINDS = {"image", "video", "audio"}
-TEXT_KINDS = {"document", "code", "data"}
 
 
 def has_exiftool() -> bool:
@@ -243,7 +242,6 @@ def run_tier2(conn, limit: int = 0) -> dict:
     run_id = db.start_run(conn, "extract")
     use_exif = has_exiftool()
 
-    by_id = {r["id"]: r for r in rows}
     media = [r for r in rows if db.kind_for_ext(r["ext"]) in MEDIA_KINDS]
     others = [r for r in rows if db.kind_for_ext(r["ext"]) not in MEDIA_KINDS]
 
