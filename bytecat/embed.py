@@ -77,8 +77,7 @@ def pending(conn, kinds: Optional[list[str]], limit: int) -> list[dict]:
            FROM files f
            JOIN volumes v ON v.id = f.volume_id
            LEFT JOIN extractions e ON e.file_id = f.id
-           WHERE f.t3_embedded = 0 AND f.state = 'present'
-             AND f.is_symlink = 0 AND v.state = 'online'"""
+           WHERE """ + db.behind("t3_embedded")
     params: list = []
     if kinds:
         q += f" AND COALESCE(e.kind, 'other') IN ({','.join('?' * len(kinds))})"
@@ -87,20 +86,12 @@ def pending(conn, kinds: Optional[list[str]], limit: int) -> list[dict]:
     if limit:
         q += f" LIMIT {int(limit)}"
 
-    rows = []
-    for r in conn.execute(q, params):
-        mount = r["last_mount"]
-        if not mount:
-            continue
-        p = os.path.join(mount, r["relpath"])
-        if os.path.exists(p):
-            rows.append({
-                "id": r["id"], "path": p, "relpath": r["relpath"],
-                "name": r["name"], "ext": r["ext"], "size": r["size_bytes"],
-                "title": r["title"], "gist": r["gist"],
-                "category": r["category"], "kind": r["kind"] or "other",
-            })
-    return rows
+    return [{
+        "id": r["id"], "path": p, "relpath": r["relpath"],
+        "name": r["name"], "ext": r["ext"], "size": r["size_bytes"],
+        "title": r["title"], "gist": r["gist"],
+        "category": r["category"], "kind": r["kind"] or "other",
+    } for r, p in db.on_disk(conn.execute(q, params))]
 
 
 def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:

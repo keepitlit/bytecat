@@ -109,8 +109,7 @@ def candidates(conn, kinds: Optional[list[str]], budget: int,
            FROM files f
            JOIN volumes v ON v.id = f.volume_id
            LEFT JOIN extractions e ON e.file_id = f.id
-           WHERE f.t4_enriched = 0 AND f.state = 'present'
-             AND f.is_symlink = 0 AND v.state = 'online'"""
+           WHERE """ + db.behind("t4_enriched")
     params: list = []
     if kinds:
         q += f" AND COALESCE(e.kind,'other') IN ({','.join('?' * len(kinds))})"
@@ -127,20 +126,12 @@ def candidates(conn, kinds: Optional[list[str]], budget: int,
         q += (" AND COALESCE(e.kind,'other') IN "
               "('document','data','other','code')")
 
-    rows = []
-    for r in conn.execute(q, params):
-        mount = r["last_mount"]
-        if not mount:
-            continue
-        p = os.path.join(mount, r["relpath"])
-        if not os.path.exists(p):
-            continue
-        rows.append({
-            "id": r["id"], "path": p, "relpath": r["relpath"], "name": r["name"],
-            "ext": r["ext"], "size": r["size_bytes"], "kind": r["kind"] or "other",
-            "score": ambiguity_score(r["name"], r["relpath"], r["title"],
-                                     r["captured_at"], r["text_chars"]),
-        })
+    rows = [{
+        "id": r["id"], "path": p, "relpath": r["relpath"], "name": r["name"],
+        "ext": r["ext"], "size": r["size_bytes"], "kind": r["kind"] or "other",
+        "score": ambiguity_score(r["name"], r["relpath"], r["title"],
+                                 r["captured_at"], r["text_chars"]),
+    } for r, p in db.on_disk(conn.execute(q, params))]
 
     rows.sort(key=lambda x: x["score"], reverse=True)
     return rows[:budget]

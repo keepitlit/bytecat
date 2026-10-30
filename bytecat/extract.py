@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from typing import Optional
@@ -204,21 +203,12 @@ def pending(conn, stage_col: str, limit: int = 0) -> list[dict]:
     """Files still behind on a tier, with a resolvable local path."""
     q = f"""SELECT f.id, f.relpath, f.ext, f.size_bytes, v.last_mount
             FROM files f JOIN volumes v ON v.id = f.volume_id
-            WHERE f.{stage_col} = 0 AND f.state = 'present'
-              AND f.is_symlink = 0 AND v.state = 'online'
+            WHERE {db.behind(stage_col)}
             ORDER BY f.id"""
     if limit:
         q += f" LIMIT {int(limit)}"
-    rows = []
-    for r in conn.execute(q):
-        mount = r["last_mount"]
-        if not mount:
-            continue
-        p = os.path.join(mount, r["relpath"])
-        if os.path.exists(p):
-            rows.append({"id": r["id"], "path": p, "ext": r["ext"],
-                         "size": r["size_bytes"]})
-    return rows
+    return [{"id": r["id"], "path": p, "ext": r["ext"], "size": r["size_bytes"]}
+            for r, p in db.on_disk(conn.execute(q))]
 
 
 def upsert_extraction(conn, file_id: int, **fields) -> None:

@@ -338,6 +338,32 @@ def kind_for_ext(ext: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# which files a tier may open
+# --------------------------------------------------------------------------
+
+def behind(tier_col: str) -> str:
+    """WHERE clause, over `files f JOIN volumes v`, for files still behind on a
+    tier that the tier may open now: present, not a symlink, on a volume that
+    is online. An offline drive is skipped, never treated as deleted."""
+    return (f"f.{tier_col} = 0 AND f.state = 'present' "
+            "AND f.is_symlink = 0 AND v.state = 'online'")
+
+
+def on_disk(rows: Iterable[sqlite3.Row]) -> Iterator[tuple[sqlite3.Row, str]]:
+    """(row, path) for each row whose file exists at its volume's last mount.
+
+    Rows need `last_mount` and `relpath`; a row with no mount is skipped.
+    """
+    for r in rows:
+        mount = r["last_mount"]
+        if not mount:
+            continue
+        p = os.path.join(mount, r["relpath"])
+        if os.path.exists(p):
+            yield r, p
+
+
+# --------------------------------------------------------------------------
 # FTS
 # --------------------------------------------------------------------------
 
