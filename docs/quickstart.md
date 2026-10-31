@@ -80,7 +80,8 @@ $ python3 ~/demo/scan.py ~/demo/nas --host nas | bytecat merge
 A network share or a pooled array such as Unraid's `/mnt/user` has no filesystem UUID, so
 it is identified by host name and mount point, which is stable as long as neither changes.
 Pass `--volume-uuid <any name>` to pin it, or `--allow-marker` to write a small
-`.bytecat-volume-id` file at its root, the one exception to `scan` being read-only.
+`.bytecat-volume-id` file at its root, the one exception to `scan` being read-only. The
+demo's NAS folder is a disk image, so it has a UUID of its own.
 
 ## 5. Hash the NAS's files on the NAS
 
@@ -123,47 +124,49 @@ $ bytecat pipeline
 [bytecat] hashed 18; reused 0; 6 need no read; 0 unreadable
 
 === extract ===
-[bytecat] media 20/20
-[bytecat] described 36 files
+[bytecat] media 13/13
+[bytecat] described 24 files
 
 === embed ===
 [bytecat] embed skipped: no model server or model at http://127.0.0.1:9/v1; start one or set BYTECAT_LLM_BASE
 ```
 
 `hash` read the 18 laptop and USB files that share a size with another file; the 6 with
-unique sizes needed no read. `extract` recorded every file's kind and read photo, music and
-video metadata with `exiftool` when it is installed.
+unique sizes needed no read. `extract` described the 24 files on this machine's drives: each
+one's kind, plus photo, music and video metadata when `exiftool` is installed. The NAS's 12
+files stay undescribed, as `status` shows below, because their bytes are on the NAS.
 
-`embed` was skipped because no model server answered; the pipeline still exits 0. The demo pointed `BYTECAT_LLM_BASE` at a
-closed port; without that setting the message names `http://127.0.0.1:1234/v1`. Embedding is
-only for search by meaning: everything else on this page needs `hash` alone. To add it later,
-see "Requirements by tier" in the [README](../README.md) and run `bytecat pipeline` again.
-`bytecat pipeline --no-embed` stops after `extract` without looking for a server.
+`embed` was skipped because no model server answered; the pipeline still exits 0. The demo
+pointed `BYTECAT_LLM_BASE` at a closed port; without that setting the message names
+`http://127.0.0.1:1234/v1`. Embedding is only for search by meaning: everything else on this
+page needs `hash` alone. To add it later, see "Requirements by tier" in the
+[README](../README.md) and run `bytecat pipeline` again. `bytecat pipeline --no-embed` stops
+after `extract` without looking for a server.
 
 ```text
 $ bytecat status
 files:   36 present  (0.0 GB), 0 missing
 
 laptop
-  /Volumes/OLD-USB  OLD-USB  E34C60EF-05C2-3C2A-A349-0D291A05E646  13 files  scanned 2026-10-30
-  ~/demo/laptop  Macintosh HD  3F1C2B7A-9D04-4E6B-8A51-0C7E2D9B4F18  11 files  scanned 2026-10-30
+  /Volumes/OLD-USB  OLD-USB  630F7B39-0A79-3806-BC86-672C5BC2D103  13 files  scanned 2026-10-30
+  ~/demo/laptop  Macintosh HD  9EE1F9A1-0EB2-32F5-9FC6-32B5955014EB  11 files  scanned 2026-10-30
 nas
-  ~/demo/nas  share  6724340F-ED69-423F-B888-CC88AA1E00A6  12 files  scanned 2026-10-30
+  ~/demo/nas  share  E1FC116C-1A2E-3F7C-97D4-70526CA1A84C  12 files  scanned 2026-10-30
 
 progress:
   hash               36 / 36  (100.0%)
-  extract            36 / 36  (100.0%)
+  extract            24 / 36  (66.7%)
   embed               0 / 36  (0.0%)
   enrich              0 / 36  (0.0%)
 
 duplicates: 10 groups, 0.0 GB reclaimable
 
 recent runs:
-  2026-10-30 19:38:48  extract  ok      36 seen
-  2026-10-30 19:38:48  hash     ok      18 seen
-  2026-10-30 19:38:47  merge    ok      12 seen
-  2026-10-30 19:38:47  merge    ok      13 seen
-  2026-10-30 19:38:47  merge    ok      11 seen
+  2026-10-30 20:20:29  extract  ok      24 seen
+  2026-10-30 20:20:29  hash     ok      18 seen
+  2026-10-30 20:20:28  merge    ok      12 seen
+  2026-10-30 20:20:27  merge    ok      13 seen
+  2026-10-30 20:20:27  merge    ok      11 seen
 ```
 
 Each drive is listed under the host it was scanned from, with its scan root, label and ID.
@@ -175,7 +178,7 @@ its files in the catalog. Each progress row is named after the command that adva
 ```text
 $ bytecat dupes
 [bytecat] 10 duplicate groups · 841.8 KB reclaimable · 8 span multiple machines (771.7 KB)
-[bytecat] report written to ~/demo/bytecat-data/reports/duplicates-20261030-193851.md
+[bytecat] report written to ~/demo/bytecat-data/reports/duplicates-20261030-202029.md
 ```
 
 The terminal gets totals only; open the report for the paths. Two groups from it:
@@ -187,8 +190,8 @@ The terminal gets totals only; open the report for the paths. Two groups from it
 
 - `laptop` [Macintosh HD] `Pictures/2019/italy/IMG_0412.jpg`
 - `laptop` [OLD-USB] `Photos/2019/Italy/IMG_0412.jpg`
-- `nas` [share] `photos/2019/italy/IMG_0412.jpg`
 - `nas` [share] `photos/2019/italy/IMG_0412 (1).jpg`
+- `nas` [share] `photos/2019/italy/IMG_0412.jpg`
 
 ### 47.1 KB × 2 copies (47.1 KB reclaimable)
 
@@ -212,7 +215,7 @@ $ bytecat coverage --source-volume OLD-USB --target-host nas
 [bytecat] not on target                 7 files    324.3 KB
 [bytecat]   of which never read         3 files    176.5 KB
 [bytecat] on target                     6 files    473.1 KB
-[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-193853.md
+[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-202029.md
 ```
 
 The report lists every file that is not on the NAS:
@@ -248,7 +251,7 @@ $ bytecat coverage --source-volume OLD-USB --target-host nas --target-host lapto
 [bytecat] not on target                 5 files    254.2 KB
 [bytecat]   of which never read         3 files    176.5 KB
 [bytecat] on target                     8 files    543.2 KB
-[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-193855.md
+[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-202029-2.md
 ```
 
 `IMG_0413.jpg` and `budget-2025.xlsx` are on the laptop, so 5 files remain: copy those
@@ -272,7 +275,7 @@ $ bytecat audit coverage --source /Volumes/OLD-USB --target ~/demo/nas
 [bytecat]   DISAGREE, disk has it, bytecat did not say so:         0
 [bytecat]   on disk, not in catalog (source)             :         0
 [bytecat]   in catalog, not found or not read (source)   :         0
-[bytecat] report written to ~/demo/bytecat-data/reports/audit-coverage-20261030-193858.md
+[bytecat] report written to ~/demo/bytecat-data/reports/audit-coverage-20261030-202030.md
 ```
 
 `catalog confirmed` is the verdict. A non-zero `DISAGREE, bytecat says copied, disk says no`
@@ -295,7 +298,7 @@ $ bytecat audit dupes --path ~/demo/nas
 [bytecat]   on disk, not in catalog                 :         0
 [bytecat]   in catalog, not found or skipped on disk:         0
 [bytecat]   size changed since the scan             :         0
-[bytecat] report written to ~/demo/bytecat-data/reports/audit-dupes-20261030-193859.md
+[bytecat] report written to ~/demo/bytecat-data/reports/audit-dupes-20261030-202030.md
 ```
 
 ## 10. Find a file
@@ -304,16 +307,17 @@ $ bytecat audit dupes --path ~/demo/nas
 $ bytecat ask insurance policy
 [bytecat] keyword results only: no model server or model at http://127.0.0.1:9/v1
  1. home-policy-2024.pdf   36.0KB  document  [3 copies]
-    laptop:Macintosh HD  Documents/insurance/home-policy-2024.pdf
+    ~/demo/laptop/Documents/insurance/home-policy-2024.pdf
 
 $ bytecat ask tax return --host nas
 [bytecat] keyword results only: no model server or model at http://127.0.0.1:9/v1
- 1. 2023-return.pdf   47.1KB  document  [3 copies]
+ 1. 2023-return.pdf   47.1KB  [3 copies]
     nas:share  backup/laptop/Documents/taxes/2023-return.pdf
 ```
 
 Without a model server, `ask` matches words in paths, file names and labels. Identical
-copies are shown once with a count. For a file on the machine you are typing on, the second
+copies are shown once with a count. The NAS result shows no kind because `extract` has not
+described it. For a file on the machine you are typing on, the second
 line is its full path; for another machine it is `host:drive` and the path inside the drive.
 
 ## Keeping it current
