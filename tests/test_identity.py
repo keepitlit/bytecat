@@ -41,6 +41,7 @@ try:
         f"20 1 0:1 / /proc rw - proc proc rw\n"
         f"36 1 {os.major(dev)}:{os.minor(dev)} / {esc} rw,relatime shared:1 - ext4 "
         f"{tmp}/dev/sdz1 rw\n")
+    real_tables = scan.MOUNTINFO, scan.BY_UUID
     scan.MOUNTINFO, scan.BY_UUID = str(mountinfo), str(by_uuid)
     info = scan.linux_volume_info(mp)
     check("reads the UUID of the mount's source device", info.get("uuid") == "1234-ABCD", str(info))
@@ -85,6 +86,7 @@ try:
         conn.close()
     finally:
         scan.platform.system = real_system
+        scan.MOUNTINFO, scan.BY_UUID = real_tables
 
     print("\n[--volume-uuid on a drive mounted here reads online]")
     src = tmp / "forced"
