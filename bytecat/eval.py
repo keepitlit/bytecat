@@ -20,7 +20,7 @@ Metrics, all computed over one search per query:
 
 Usage:
     eval.py                          # run and print the scoreboard
-    eval.py --queries my.json        # a query set of your own (see tests/eval_queries.json)
+    eval.py --queries my.json        # a query set of your own (see bytecat/eval_queries.json)
     eval.py --json runs/base.json    # also save machine-readable results
     eval.py --baseline runs/base.json  # print deltas against a saved run
 
@@ -35,14 +35,23 @@ import argparse
 import fnmatch
 import json
 import sys
+from importlib import resources
 from pathlib import Path
 from typing import Optional
 
 from . import ask, db
 
-QUERIES_PATH = Path(__file__).resolve().parent.parent / "tests" / "eval_queries.json"
+# Package data, so the default set ships with an installed bytecat, not only a clone.
+QUERIES = "eval_queries.json"
 POOL = 30
 TOP = 5
+
+
+def load_queries(path: str = "") -> dict:
+    """A query set from `path`, or the one bundled with the package."""
+    if path:
+        return json.loads(Path(path).expanduser().read_text())
+    return json.loads(resources.files("bytecat").joinpath(QUERIES).read_text())
 
 
 def is_noise(relpath: str, globs: list[str]) -> bool:
@@ -139,11 +148,11 @@ def main() -> int:
                     help="MRR change vs a saved --json run")
     ap.add_argument("--smart", action="store_true",
                     help="score with ask --smart reranking")
-    ap.add_argument("--queries", default=str(QUERIES_PATH),
-                    help="query set (default: tests/eval_queries.json)")
+    ap.add_argument("--queries", default="",
+                    help="query set (default: the bundled one)")
     args = ap.parse_args()
 
-    spec = json.loads(Path(args.queries).expanduser().read_text())
+    spec = load_queries(args.queries)
     try:
         conn = db.connect(readonly=True)
     except db.NoCatalog as e:

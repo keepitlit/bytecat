@@ -334,7 +334,7 @@ recall@pool, attractor rate) against a fixed query set.
 | `--json PATH` | Write the results to PATH. |
 | `--baseline PATH` | Show the MRR change against a saved `--json` run. |
 | `--smart` | Score with `ask --smart` re-ranking. |
-| `--queries PATH` | Query set. Default: `tests/eval_queries.json`, which exists only in a clone. |
+| `--queries PATH` | Query set. Default: the set bundled with bytecat, for `tests/fixtures/eval-corpus`. |
 
 ## Environment variables
 

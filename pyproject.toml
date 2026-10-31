@@ -31,4 +31,4 @@ bytecat = "bytecat.cli:main"
 packages = ["bytecat"]
 
 [tool.setuptools.package-data]
-bytecat = ["schema.sql"]
+bytecat = ["schema.sql", "eval_queries.json"]

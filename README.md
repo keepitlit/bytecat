@@ -354,7 +354,7 @@ python3 -m bytecat eval --baseline before.json
 ```
 
 Write your own `--queries` file against your real catalog to measure on real data; the
-format is in `tests/eval_queries.json`. `docs/design/` holds the dated notes on how the
+format is in `bytecat/eval_queries.json`. `docs/design/` holds the dated notes on how the
 ranking pipeline got its shape.
 
 ## Notes
