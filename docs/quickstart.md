@@ -146,10 +146,10 @@ $ bytecat status
 files:   36 present  (0.0 GB), 0 missing
 
 laptop
-  /Volumes/OLD-USB  OLD-USB  E34C60EF-05C2-3C2A-A349-0D291A05E646  13 files  scanned 2026-10-31
-  ~/demo/laptop  Macintosh HD  3F1C2B7A-9D04-4E6B-8A51-0C7E2D9B4F18  11 files  scanned 2026-10-31
+  /Volumes/OLD-USB  OLD-USB  E34C60EF-05C2-3C2A-A349-0D291A05E646  13 files  scanned 2026-10-30
+  ~/demo/laptop  Macintosh HD  3F1C2B7A-9D04-4E6B-8A51-0C7E2D9B4F18  11 files  scanned 2026-10-30
 nas
-  ~/demo/nas  share  6724340F-ED69-423F-B888-CC88AA1E00A6  12 files  scanned 2026-10-31
+  ~/demo/nas  share  6724340F-ED69-423F-B888-CC88AA1E00A6  12 files  scanned 2026-10-30
 
 progress:
   hash               36 / 36  (100.0%)
@@ -160,11 +160,11 @@ progress:
 duplicates: 10 groups, 0.0 GB reclaimable
 
 recent runs:
-  2026-10-31 02:38:48 UTC  extract  ok      36 seen
-  2026-10-31 02:38:48 UTC  hash     ok      18 seen
-  2026-10-31 02:38:47 UTC  merge    ok      12 seen
-  2026-10-31 02:38:47 UTC  merge    ok      13 seen
-  2026-10-31 02:38:47 UTC  merge    ok      11 seen
+  2026-10-30 19:38:48  extract  ok      36 seen
+  2026-10-30 19:38:48  hash     ok      18 seen
+  2026-10-30 19:38:47  merge    ok      12 seen
+  2026-10-30 19:38:47  merge    ok      13 seen
+  2026-10-30 19:38:47  merge    ok      11 seen
 ```
 
 Each drive is listed under the host it was scanned from, with its scan root, label and ID.

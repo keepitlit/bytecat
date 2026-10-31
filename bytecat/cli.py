@@ -10,8 +10,18 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from . import db
+
+
+def local_time(utc: str) -> str:
+    """A SQLite datetime('now') value, which is UTC, in this machine's time."""
+    try:
+        t = datetime.strptime(utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return utc or ""
+    return f"{t.astimezone():%Y-%m-%d %H:%M:%S}"
 
 
 def cmd_status(args) -> int:
@@ -74,7 +84,7 @@ def cmd_status(args) -> int:
             host = v["host"]
             print(host)
         label = f"  {v['label']}" if v["label"] else ""
-        scanned = (v["last_scan"] or "")[:10]
+        scanned = local_time(v["last_scan"])[:10]
         offline = "  offline" if states.get(v["id"]) == "offline" else ""
         print(f"  {v['last_mount'] or '-'}{label}  {v['uuid']}  "
               f"{v['n']:,} files  scanned {scanned}{offline}")
@@ -96,9 +106,9 @@ def cmd_status(args) -> int:
     if recent:
         print("\nrecent runs:")
         for r in recent:
-            # started_at is SQLite datetime('now'), which is UTC.
+            # Local, as report names and headers are.
             errs = f", {r['n_errors']} error(s)" if r['n_errors'] else ""
-            print(f"  {r['started_at']} UTC  {r['stage']:<8} {r['status']:<6}  "
+            print(f"  {local_time(r['started_at'])}  {r['stage']:<8} {r['status']:<6}  "
                   f"{r['n_seen']:,} seen{errs}")
     return 0
 

@@ -305,7 +305,7 @@ usage: bytecat status [-h]
 Use it to see what is catalogued and how far each tier has got. Lists every drive by host
 with its scan root, label, ID, file count and scan date, and `offline` for this machine's drives
 that are not mounted now. Progress rows are named after the command that advances them. The
-last five runs are listed in UTC.
+last five runs are listed, in local time.
 
 ### Re-reading a drive: `hash --forget`
 
