@@ -111,17 +111,18 @@ bytecat hash --ingest results.ndjson
 ### pipeline
 
 ```
-usage: bytecat pipeline [-h] [--limit LIMIT]
+usage: bytecat pipeline [-h] [--limit LIMIT] [--no-embed]
 ```
 
 Use it after merging new scans. Runs `hash`, `extract` and `embed` in that order and stops at
 the first step that fails; re-running resumes where it stopped. `enrich` is never part of it.
-Without a model server and Chroma, `embed` fails and the pipeline exits 1 after `hash` and
-`extract` have finished, which is all `dupes` and `coverage` need.
+Without a model server or Chroma, `embed` is skipped with one line saying why and the
+pipeline exits 0: `dupes` and `coverage` need only `hash`.
 
 | flag | what it does |
 |---|---|
 | `--limit N` | Passed to `extract` and `embed` as their `--limit`. `hash` is not limited. |
+| `--no-embed` | Stop after `extract`, without checking for a model server. |
 
 ### extract
 
@@ -360,7 +361,7 @@ The model and Chroma addresses must be loopback (`127.0.0.1`, `localhost`, `::1`
 | code | meaning |
 |---|---|
 | 0 | Done. `status` also exits 0 when there is no catalog yet. |
-| 1 | `audit` found a disagreement; or `embed`, `enrich` or a `pipeline` step failed. |
+| 1 | `audit` found a disagreement; or `embed`, `enrich` or a `pipeline` step failed. A `pipeline` that skips `embed` for want of a server exits 0. |
 | 2 | A flag or argument is wrong; no catalog yet (`ask`, `dupes`, `coverage`, `audit`, `eval`); `hash --forget` without `--volume`; `enrich --budget` not positive; `ask --host` names an unknown host. |
 
 Errors from `sys.exit` with a message (an unknown drive, an uncatalogued audit path, a

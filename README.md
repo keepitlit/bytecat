@@ -59,7 +59,7 @@ in `2024/Italy/` is skipped so the budget goes to `Scan_0043.pdf` in Downloads.
 
 - **Local only.** `llm.py` and `chroma.py` refuse any non-loopback endpoint, and
   there is no setting that relaxes it. If the model server is down the pipeline
-  stops rather than falling back to anything hosted. The guard is re-applied to every
+  skips `embed` rather than falling back to anything hosted. The guard is re-applied to every
   HTTP redirect hop, because `urllib` follows 302s without asking.
 - **Helpers are on a leash.** The invariant is only as strong as the subprocesses
   we shell out to, and those have their own network stacks. `extract_text()`
@@ -265,11 +265,12 @@ Pass `--descend-bundles` to index their contents instead.
 been merged into this catalog yet, or `BYTECAT_HOME` points somewhere other than where
 you merged.
 
-**`pipeline` ends with `embed failed`, after `no model server or model at
+**`pipeline` ends with `embed skipped: no model server or model at
 http://127.0.0.1:1234/v1`.** No model server is running, or it lists no model. `hash` and
-`extract` have already finished, so `dupes`, `coverage`, `audit` and keyword `ask` work.
-For search by meaning, start a server with an embedding model loaded, start Chroma, and
-re-run `pipeline`.
+`extract` have finished and the exit code is 0, so `dupes`, `coverage`, `audit` and keyword
+`ask` work. For search by meaning, start a server with an embedding model loaded, start
+Chroma, and re-run `pipeline`. On a machine that will never run one, use
+`pipeline --no-embed`.
 
 **`Chroma not reachable at http://127.0.0.1:8100`** from `embed`, or `no Chroma at …`
 from `ask`. Start Chroma as shown under Requirements by tier, or set

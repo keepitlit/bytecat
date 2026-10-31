@@ -7,7 +7,8 @@ offline handling, hardlink accounting, and the privacy invariant.
 
     python3 tests/test_pipeline.py
 
-Tiers 3 and 4 need LM Studio and Chroma; those checks skip if either is down.
+Tiers 3 and 4 need a model server and Chroma. Both point at a closed port here,
+so those checks skip: the suite never calls a real one.
 """
 
 from __future__ import annotations
@@ -204,6 +205,9 @@ def main() -> int:
         os.environ["BYTECAT_HOME"] = str(tmp / "data")
         # Keep vectors out of the real collection.
         os.environ["BYTECAT_CHROMA_COLLECTION"] = "bytecat_test"
+        os.environ["BYTECAT_LLM_BASE"] = "http://127.0.0.1:9/v1"
+        os.environ["BYTECAT_CHROMA_BASE"] = "http://127.0.0.1:9"
+        os.environ["BYTECAT_LLM_AUTOSTART"] = "0"
         # This machine is hostA; hostB hashes its own files, as a NAS would.
         os.environ["BYTECAT_HOST"] = "hostA"
         env = {**os.environ}
@@ -334,7 +338,7 @@ def main() -> int:
 
         r = run([py, "-m", "bytecat.embed"], env)
         if r.returncode != 0:
-            print("  SKIP  embed (LM Studio or Chroma unavailable)")
+            print("  SKIP  embed (no model server or Chroma here)")
         else:
             check("embed succeeded", True)
             q = run([py, "-m", "bytecat.ask", "beekeeping"], env)

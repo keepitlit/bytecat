@@ -127,18 +127,18 @@ $ bytecat pipeline
 [bytecat] described 36 files
 
 === embed ===
-[bytecat] no model server or model at http://127.0.0.1:9/v1; start one or set BYTECAT_LLM_BASE
-[bytecat] embed failed; fix it, then re-run `bytecat pipeline` to resume
+[bytecat] embed skipped: no model server or model at http://127.0.0.1:9/v1; start one or set BYTECAT_LLM_BASE
 ```
 
 `hash` read the 18 laptop and USB files that share a size with another file; the 6 with
 unique sizes needed no read. `extract` recorded every file's kind and read photo, music and
 video metadata with `exiftool` when it is installed.
 
-`embed` stopped because no model server answered. The demo pointed `BYTECAT_LLM_BASE` at a
+`embed` was skipped because no model server answered; the pipeline still exits 0. The demo pointed `BYTECAT_LLM_BASE` at a
 closed port; without that setting the message names `http://127.0.0.1:1234/v1`. Embedding is
 only for search by meaning: everything else on this page needs `hash` alone. To add it later,
 see "Requirements by tier" in the [README](../README.md) and run `bytecat pipeline` again.
+`bytecat pipeline --no-embed` stops after `extract` without looking for a server.
 
 ```text
 $ bytecat status

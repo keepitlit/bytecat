@@ -113,20 +113,46 @@ def cmd_status(args) -> int:
     return 0
 
 
+def embed_unavailable() -> str:
+    """Why embed cannot run here, or "" when its servers answer."""
+    from .chroma import Chroma
+    from .llm import ModelServer, ModelServerDown
+    from .localonly import LocalOnlyError
+    try:
+        ModelServer().ensure_up()
+        chroma = Chroma()
+    except ModelServerDown as e:
+        return str(e)
+    except LocalOnlyError:
+        # A setting to fix, not a server that is down: embed reports it and fails.
+        return ""
+    if not chroma.heartbeat():
+        return f"no Chroma at {chroma.base}; start it or set BYTECAT_CHROMA_BASE"
+    return ""
+
+
 def cmd_pipeline(args) -> int:
     """Run the cheap tiers in order. Tier 4 is excluded on purpose -- it costs
     real time and should always be an explicit, budgeted decision."""
     steps = [
         ("hash", [sys.executable, "-m", "bytecat.hash"]),
         ("extract", [sys.executable, "-m", "bytecat.extract"]),
-        ("embed", [sys.executable, "-m", "bytecat.embed"]),
     ]
+    if not args.no_embed:
+        steps.append(("embed", [sys.executable, "-m", "bytecat.embed"]))
     if args.limit:
-        steps[1][1].extend(["--limit", str(args.limit)])
-        steps[2][1].extend(["--limit", str(args.limit)])
+        for _, cmd in steps[1:]:
+            cmd.extend(["--limit", str(args.limit)])
 
     for name, cmd in steps:
         print(f"\n=== {name} ===", flush=True)
+        # No model server is a normal setup: dupes and coverage need only hash,
+        # so a script's pipeline run succeeds without one. `bytecat embed` on
+        # its own still exits 1.
+        why = embed_unavailable() if name == "embed" else ""
+        if why:
+            print(f"[bytecat] embed skipped: {why}", file=sys.stderr)
+            return 0
         r = subprocess.run(cmd)
         if r.returncode != 0:
             # Each step commits per batch, so a re-run resumes where it stopped.
@@ -158,6 +184,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("pipeline", help="run hash + extract + embed in order")
     p.add_argument("--limit", type=int, default=0,
                    help="passed to extract and embed as their --limit")
+    p.add_argument("--no-embed", action="store_true",
+                   help="stop after extract; needs no model server")
     dispatched(
         ("hash", "bytecat.hash", "hash file contents"),
         ("extract", "bytecat.extract", "read file metadata"),
