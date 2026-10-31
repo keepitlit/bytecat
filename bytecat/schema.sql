@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS volumes (
     label        TEXT,
     fs_type      TEXT,
     total_bytes  INTEGER,
-    last_mount   TEXT,                     -- most recent mount point, informational only
+    -- The folder every file path on this drive is relative to: the scan
+    -- root, or the folder holding all of them (db.place_root). vbase is the
+    -- same folder relative to the drive's mount point.
+    last_mount   TEXT,
     -- 'online' = seen in the last scan. 'offline' = not currently reachable.
     -- Offline is NORMAL (unplugged drive); it must never cascade into deletes.
     state        TEXT NOT NULL DEFAULT 'online'
@@ -39,6 +42,7 @@ CREATE TABLE IF NOT EXISTS volumes (
     -- With --volume-uuid: the ID the drive reports itself, so it can still be
     -- recognised as mounted here. NULL otherwise.
     fs_uuid      TEXT,
+    vbase        TEXT,
     UNIQUE (host_id, uuid)
 );
 
@@ -61,7 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_blobs_fanout ON blobs(n_files) WHERE n_files > 1;
 CREATE TABLE IF NOT EXISTS files (
     id          INTEGER PRIMARY KEY,
     volume_id   INTEGER NOT NULL REFERENCES volumes(id),
-    relpath     TEXT NOT NULL,             -- path relative to the volume root
+    relpath     TEXT NOT NULL,             -- path relative to volumes.last_mount
     name        TEXT NOT NULL,
     ext         TEXT,                      -- lowercased, no dot
     size_bytes  INTEGER NOT NULL,

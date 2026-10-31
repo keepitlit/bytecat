@@ -146,7 +146,7 @@ with their own network stacks, and two of them phone home unless told not to.
 ## Use
 
 ```sh
-# 1. index this machine: one root per drive, and the same root every time
+# 1. index this machine; any folders, the same ones each time they change
 python3 -m bytecat scan ~ | python3 -m bytecat merge
 
 # a host you can't mount locally: copy the one stdlib-only file over
@@ -286,7 +286,7 @@ only drives whose scan root exists on this machine. Plug the drive in, or hash a
 host's files there (see "Hashing a host you can't mount").
 
 **`no volume 'X'; bytecat status lists them`, or `'X' matches 2 volumes`.** Drives are
-named by UUID, label or scan root, matched exactly. Copy one from `bytecat status`; when two
+named by UUID, label or the folder `status` shows, matched exactly. Copy one from `bytecat status`; when two
 drives share a label, pass the UUID.
 
 **`<path> not catalogued; scan first`** from `audit`. The path must be at or under the
@@ -296,6 +296,9 @@ folder a drive was scanned from, as the catalog recorded it. A drive scanned at
 **A drive shows `offline` in `status` but is plugged in.** It is mounted somewhere other
 than its last scan root; scan it again from where it is now. A drive scanned with
 `--volume-uuid` by an older bytecat needs one rescan to read online.
+
+**Files under one of two folders on a drive show as missing.** An older bytecat stored two
+scan roots on one drive as one root. Scan both folders again.
 
 **`scan` reports `N paths unreadable`.** Those folders could not be listed, usually for
 permissions, and their files are not in the catalog. `bytecat scan <root> 2>/dev/null |

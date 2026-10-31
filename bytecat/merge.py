@@ -46,6 +46,7 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
     host_name = ""
     vol_id: Optional[int] = None
     vol_uuid = ""
+    prefix = ""   # the scan root's place on its drive; see db.place_root
 
     batch: list[tuple] = []
     stats = {"files": 0, "errors": 0, "volumes": 0, "missing": 0, "bad": 0}
@@ -66,7 +67,7 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
             return
         flush()
         if prune:
-            stats["missing"] += db.mark_missing(conn, vol_id, run_id)
+            stats["missing"] += db.mark_missing(conn, vol_id, run_id, prefix)
         vol_id = None
 
     try:
@@ -88,6 +89,8 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
                     fs_uuid=rec.get("fs_uuid", "") or "",
                     aliases=rec.get("aliases") or (),
                 )
+                prefix = db.place_root(conn, vol_id, rec.get("root", ""),
+                                       rec.get("mount", "") or "")
                 stats["volumes"] += 1
                 conn.execute(
                     "UPDATE runs SET host = ?, volume_uuid = ? WHERE id = ?",
@@ -97,8 +100,9 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
             elif kind == "file":
                 if vol_id is None:
                     continue  # file record before any volume header
+                rel = f"{prefix}/{rec['relpath']}" if prefix else rec["relpath"]
                 batch.append((
-                    vol_id, rec["relpath"], rec["name"], rec.get("ext", ""),
+                    vol_id, rel, rec["name"], rec.get("ext", ""),
                     rec["size"], rec["mtime"], rec.get("inode"),
                     rec.get("nlink", 1), rec.get("symlink", 0),
                 ))

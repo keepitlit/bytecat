@@ -186,9 +186,7 @@ def render(results: list[dict], *, show_full_path: bool) -> str:
         kind = f"  {r['kind']}" if r["kind"] else ""
         out.append(f"{i:2}. {r['name']}   {human_size(r['size_bytes'])}"
                    f"{kind}{dupes}{offline}")
-        # Both checks: two scan roots on one drive share its UUID, so
-        # last_mount holds only the later root, and another host's mount
-        # path can exist here too.
+        # Both checks: another host's mount path can exist here too.
         if r["last_mount"] and r["host"] == here and os.path.exists(joined):
             out.append(f"    {joined}")
         else:

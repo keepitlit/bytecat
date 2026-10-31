@@ -36,7 +36,7 @@ lists files as NDJSON on stdout and opens none of them; pipe it into `merge`.
 
 | flag | what it does |
 |---|---|
-| `roots` | Folders to list. Give each drive one root and keep using the same one: two roots on the same drive are stored as one drive, so a later scan of either marks the other's files missing. |
+| `roots` | Folders to list. Several on one drive are kept apart; a rescan of one leaves the others as they were. |
 | `--host HOST` | Host name to record. Default: this machine's name, up to the first dot. |
 | `--volume-uuid ID` | Use this ID for the drive instead of detecting one. For network shares and other drives with no filesystem UUID. |
 | `--allow-marker` | When the drive has no ID, write `.bytecat-volume-id` at its root once and use it from then on. The only flag that makes `scan` write anything. |
@@ -66,8 +66,8 @@ usage: bytecat merge [-h] [--no-prune] [path]
 ```
 
 Use it on the output of every `scan`. Adds new files, updates changed ones, and marks files
-the scan did not see as missing. Rows are never deleted. Only drives present in the input are
-touched, so a drive you did not scan this time is left as it was.
+the scan did not see as missing. Rows are never deleted. Only folders present in the input are
+touched, so a drive or folder you did not scan this time is left as it was.
 
 | flag | what it does |
 |---|---|
@@ -303,7 +303,7 @@ usage: bytecat status [-h]
 ```
 
 Use it to see what is catalogued and how far each tier has got. Lists every drive by host
-with its scan root, label, ID, file count and scan date, and `offline` for this machine's drives
+with its scan root (or the folder holding all its roots), label, ID, file count and scan date, and `offline` for this machine's drives
 that are not mounted now. Progress rows are named after the command that advances them. The
 last five runs are listed, in local time.
 

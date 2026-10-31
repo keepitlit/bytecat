@@ -38,9 +38,8 @@ $ bytecat scan ~/demo/laptop --host laptop | bytecat merge
 
 On your own machine leave out `--host`; it defaults to the machine's name.
 
-Give each drive one root folder, such as your home folder, and scan that same folder every
-time. Two roots on the same drive are stored as one drive, so a later scan of either marks
-the other's files missing.
+Scan the same folders each time they change. Several folders on one drive are fine: a
+rescan of one leaves the others as they were.
 
 A Photos library or other bundle is stored as one entry with its total size; in the demo,
 `Pictures/Photos Library.photoslibrary` is one of the 11 files. On macOS, scanning inside your

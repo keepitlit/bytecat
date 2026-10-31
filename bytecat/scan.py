@@ -462,7 +462,7 @@ def main() -> int:
     # Standalone on a NAS host (python3 scan.py) it keeps its own name.
     ap = argparse.ArgumentParser(prog="bytecat scan" if __package__ else None,
         description="list files under each root as NDJSON for bytecat merge")
-    ap.add_argument("roots", nargs="*", help="folders to list; one root per drive")
+    ap.add_argument("roots", nargs="*", help="folders to list")
     ap.add_argument("--host", default=platform.node().split(".")[0],
                     help="host name to record (default: this machine's name)")
     ap.add_argument("--volume-uuid", default="",
@@ -506,6 +506,8 @@ def main() -> int:
             "host": args.host,
             "platform": platform.system().lower(),
             "root": root,
+            # Lets merge place two roots on one drive, and follow a remount.
+            "mount": mount_point(root),
             "scan_started": t0,
             **vol,
         }), flush=True)

@@ -138,6 +138,9 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
     have = {c[1] for c in conn.execute("PRAGMA table_info(volumes)")}
     if "fs_uuid" not in have:
         conn.execute("ALTER TABLE volumes ADD COLUMN fs_uuid TEXT")
+    if "vbase" not in have:
+        # NULL: place_root() derives it from last_mount at the next scan.
+        conn.execute("ALTER TABLE volumes ADD COLUMN vbase TEXT")
 
 
 def _migrate_fts(conn: sqlite3.Connection) -> None:
@@ -204,7 +207,10 @@ def upsert_volume(
     aliases: Iterable[str] = (),
 ) -> int:
     """Insert or refresh a volume. A drive first catalogued under one of
-    `aliases` (an ID an earlier scan gave it) is renamed, not duplicated."""
+    `aliases` (an ID an earlier scan gave it) is renamed, not duplicated.
+
+    `mount` is the scan root, stored as last_mount for a new volume only;
+    place_root() decides it for a drive already catalogued."""
     if not conn.execute("SELECT 1 FROM volumes WHERE host_id = ? AND uuid = ?",
                         (host_id, uuid)).fetchone():
         for alias in aliases:
@@ -219,7 +225,6 @@ def upsert_volume(
                label       = COALESCE(NULLIF(excluded.label, ''), volumes.label),
                fs_type     = COALESCE(NULLIF(excluded.fs_type, ''), volumes.fs_type),
                total_bytes = COALESCE(excluded.total_bytes, volumes.total_bytes),
-               last_mount  = COALESCE(NULLIF(excluded.last_mount, ''), volumes.last_mount),
                state       = 'online',
                last_scan   = datetime('now'),
                fs_uuid     = excluded.fs_uuid""",
@@ -228,6 +233,68 @@ def upsert_volume(
     return conn.execute(
         "SELECT id FROM volumes WHERE host_id = ? AND uuid = ?", (host_id, uuid)
     ).fetchone()["id"]
+
+
+def _under(path: str, parent: str) -> bool:
+    return path == parent or path.startswith(parent.rstrip("/") + "/")
+
+
+def _rel(path: str, start: str) -> str:
+    """relpath, with '' rather than '.' for the folder itself. Paths that are
+    already relative (volume-relative bases) are compared as if under /."""
+    r = os.path.relpath("/" + path.lstrip("/") if not os.path.isabs(path) else path,
+                        "/" + start.lstrip("/") if not os.path.isabs(start) else start)
+    return "" if r == "." else r
+
+
+def place_root(conn: sqlite3.Connection, vol_id: int, root: str, mount: str = "") -> str:
+    """Fit a scan root into its drive's catalog and return its relpath prefix.
+
+    A drive's file paths are stored relative to one folder, last_mount. With
+    one scan root that folder is the root. A second root on the same drive
+    widens it to the folder holding both, and the rows already stored are
+    re-prefixed, so same-named files under the two roots stay two rows and a
+    rescan of one root prunes only under its own prefix.
+
+    The folder is also kept relative to the drive's mount point (vbase), so a
+    drive that remounts elsewhere ("/Volumes/Backup 1") moves its folder with
+    it instead of being widened to /Volumes. `mount` comes from scan; a
+    scan.py too old to send it gets the earlier behaviour: a root that
+    contains or sits inside the folder is fitted, any other replaces it.
+
+    A row from before vbase existed has paths relative to its last scan root.
+    """
+    row = conn.execute("SELECT last_mount, vbase FROM volumes WHERE id = ?",
+                       (vol_id,)).fetchone()
+    base, vbase = row["last_mount"] or root, row["vbase"]
+    if mount and _under(root, mount):
+        vroot = _rel(root, mount)
+        if vbase is None:
+            vbase = _rel(base, mount) if _under(base, mount) else vroot
+        new_vbase = os.path.commonpath(["/" + vbase, "/" + vroot]).lstrip("/")
+        shift = _rel(vbase, new_vbase)
+        new_base = os.path.normpath(os.path.join(mount, new_vbase))
+    else:
+        new_vbase = vbase
+        shift, new_base = "", base
+        if _under(base, root) and base != root:
+            shift, new_base, new_vbase = _rel(base, root), root, None
+        elif not _under(root, base):
+            new_base, new_vbase = root, None
+    if shift:
+        # Through a prefix no relpath has ('//'), so no row ever collides
+        # with one not yet updated under UNIQUE (volume_id, relpath).
+        conn.execute("UPDATE files SET relpath = '//' || relpath WHERE volume_id = ?",
+                     (vol_id,))
+        conn.execute("UPDATE files SET relpath = ? || '/' || substr(relpath, 3) "
+                     "WHERE volume_id = ?", (shift, vol_id))
+        ids = [r[0] for r in conn.execute("SELECT id FROM files WHERE volume_id = ?",
+                                          (vol_id,))]
+        for i in range(0, len(ids), 5000):
+            fts_sync(conn, ids[i:i + 5000])
+    conn.execute("UPDATE volumes SET last_mount = ?, vbase = ? WHERE id = ?",
+                 (new_base, new_vbase, vol_id))
+    return _rel(root, new_base)
 
 
 def resolve_volume(conn: sqlite3.Connection, value: str) -> list[int]:
@@ -365,8 +432,12 @@ def upsert_files(conn: sqlite3.Connection, rows: Iterable[tuple],
     return cur.rowcount
 
 
-def mark_missing(conn: sqlite3.Connection, volume_id: int, run_id: int) -> int:
-    """Flag rows this merge run did not see, on a volume it actually scanned.
+def mark_missing(conn: sqlite3.Connection, volume_id: int, run_id: int,
+                 prefix: str = "") -> int:
+    """Flag rows this merge run did not see, under the root it actually scanned.
+
+    `prefix` is the root's place in the drive (place_root), so a scan of one
+    root never marks another root's files on the same drive missing.
 
     Compares run ids rather than timestamps: datetime('now') is second-
     resolution, so a rescan finishing inside the same second as the previous one
@@ -377,8 +448,10 @@ def mark_missing(conn: sqlite3.Connection, volume_id: int, run_id: int) -> int:
     """
     cur = conn.execute(
         """UPDATE files SET state = 'missing'
-           WHERE volume_id = ? AND state = 'present' AND last_run != ?""",
-        (volume_id, run_id),
+           WHERE volume_id = ? AND state = 'present' AND last_run != ?
+             AND substr(relpath, 1, ?) = ?""",
+        (volume_id, run_id, len(prefix) + 1 if prefix else 0,
+         prefix + "/" if prefix else ""),
     )
     return cur.rowcount
 
