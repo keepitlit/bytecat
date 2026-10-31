@@ -85,6 +85,8 @@ def merge_stream(conn, stream: TextIO, *, prune: bool = True) -> dict:
                     fs_type=rec.get("fs_type", "") or "",
                     total_bytes=rec.get("total_bytes"),
                     mount=rec.get("root", ""),
+                    fs_uuid=rec.get("fs_uuid", "") or "",
+                    aliases=rec.get("aliases") or (),
                 )
                 stats["volumes"] += 1
                 conn.execute(

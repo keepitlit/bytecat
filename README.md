@@ -153,9 +153,9 @@ python3 -m bytecat scan ~ | python3 -m bytecat merge
 scp bytecat/scan.py nas:/tmp/
 ssh nas 'python3 /tmp/scan.py /mnt/user --host nas' | python3 -m bytecat merge
 
-# an external drive: on macOS its identity is the volume UUID, not the mount
-# point, so it survives remounting at "/Volumes/Backup 1". On Linux add
-# --allow-marker the first time, or it is identified by its mount point.
+# an external drive: its identity is the filesystem UUID, not the mount
+# point, so it survives remounting at "/Volumes/Backup 1". A share with no
+# UUID needs --allow-marker the first time, or it is identified by its mount point.
 python3 -m bytecat scan /Volumes/Backup | python3 -m bytecat merge
 
 # 2. the cheap tiers (hash + metadata + vectors)
@@ -294,9 +294,8 @@ folder a drive was scanned from, as the catalog recorded it. A drive scanned at
 `/Volumes/Backup` and now mounted at `/Volumes/Backup 1` needs a rescan first.
 
 **A drive shows `offline` in `status` but is plugged in.** It is mounted somewhere other
-than its last scan root; scan it again from where it is now. On macOS, a drive on this
-machine scanned with `--volume-uuid` always reads as offline, because `diskutil` reports a
-different ID.
+than its last scan root; scan it again from where it is now. A drive scanned with
+`--volume-uuid` by an older bytecat needs one rescan to read online.
 
 **`scan` reports `N paths unreadable`.** Those folders could not be listed, usually for
 permissions, and their files are not in the catalog. `bytecat scan <root> 2>/dev/null |

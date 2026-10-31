@@ -56,10 +56,8 @@ $ bytecat scan /Volumes/OLD-USB --host laptop | bytecat merge
 [bytecat] merged 13 files, 1 volume(s); 0 now missing; 0 paths unreadable
 ```
 
-On macOS the drive is identified by its volume UUID, so it is the same drive wherever it
-mounts. On Linux, add `--allow-marker` the first time: it writes a small
-`.bytecat-volume-id` file at the drive's root, the one exception to `scan` being read-only.
-Without it, a Linux drive that mounts at a different path is catalogued as a new drive.
+The drive is identified by its filesystem UUID, so it is the same drive wherever it
+mounts.
 
 ## 4. Index the NAS
 
@@ -79,9 +77,10 @@ $ python3 ~/demo/scan.py ~/demo/nas --host nas | bytecat merge
 [bytecat] merged 12 files, 1 volume(s); 0 now missing; 0 paths unreadable
 ```
 
-On Linux `scan` reads no volume UUID, so the share is identified by host name and mount
-point, which is stable as long as neither changes. Pass `--volume-uuid <any name>` to pin
-it.
+A network share or a pooled array such as Unraid's `/mnt/user` has no filesystem UUID, so
+it is identified by host name and mount point, which is stable as long as neither changes.
+Pass `--volume-uuid <any name>` to pin it, or `--allow-marker` to write a small
+`.bytecat-volume-id` file at its root, the one exception to `scan` being read-only.
 
 ## 5. Hash the NAS's files on the NAS
 

@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS volumes (
     state        TEXT NOT NULL DEFAULT 'online'
                  CHECK (state IN ('online', 'offline')),
     last_scan    TEXT,
+    -- With --volume-uuid: the ID the drive reports itself, so it can still be
+    -- recognised as mounted here. NULL otherwise.
+    fs_uuid      TEXT,
     UNIQUE (host_id, uuid)
 );
 

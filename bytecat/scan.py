@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -120,53 +121,123 @@ def mount_point(path: str) -> str:
     return mp
 
 
+# Read at call time, so a test can point them at a fake tree.
+MOUNTINFO = "/proc/self/mountinfo"
+BY_UUID = "/dev/disk/by-uuid"
+
+
+def _unescape(field: str) -> str:
+    """mountinfo writes a space in a path as \\040, and so on."""
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), field)
+
+
+def linux_volume_info(mp: str) -> dict:
+    """The filesystem UUID of the device mounted at `mp`. Linux only; best-effort.
+
+    Finds the mount's source device in /proc/self/mountinfo and matches it
+    against the /dev/disk/by-uuid symlinks, by device number or by the path
+    the link resolves to (btrfs reports an anonymous device number, so the
+    source path is the only match there). A network share, tmpfs or overlay
+    has no entry in by-uuid and returns nothing, and the caller falls back.
+    """
+    try:
+        dev = os.stat(mp).st_dev
+    except OSError:
+        return {}
+    want = f"{os.major(dev)}:{os.minor(dev)}"
+    best = None
+    try:
+        with open(MOUNTINFO) as fh:
+            for line in fh:
+                head, sep, tail = line.partition(" - ")
+                f, t = head.split(), tail.split()
+                if not sep or len(f) < 5 or len(t) < 2 or f[2] != want:
+                    continue
+                entry = (t[0], _unescape(t[1]))
+                # Bind mounts share a device; the one mounted at mp wins.
+                if best is None or _unescape(f[4]) == mp:
+                    best = entry
+    except OSError:
+        return {}
+    fs_type, source = best or ("", "")
+    try:
+        names = sorted(os.listdir(BY_UUID))
+    except OSError:
+        return {}
+    real = os.path.realpath(source) if source.startswith("/") else ""
+    for name in names:
+        link = os.path.join(BY_UUID, name)
+        try:
+            if os.stat(link).st_rdev == dev or (real and os.path.realpath(link) == real):
+                return {"uuid": name, "fs_type": fs_type}
+        except OSError:
+            continue
+    return {}
+
+
+def read_marker(mp: str) -> str:
+    try:
+        with open(os.path.join(mp, MARKER)) as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
 def volume_identity(root: str, forced: str = "", allow_marker: bool = False) -> dict:
     """Resolve a stable identity for the volume containing `root`.
 
-    Identity precedence: explicit --volume-uuid, then a real filesystem UUID,
-    then a marker file at the mount point, then a synthetic fallback.
+    Identity precedence: explicit --volume-uuid, then a real filesystem UUID
+    (diskutil on macOS, /dev/disk/by-uuid on Linux), then a marker file at the
+    mount point, then a synthetic fallback.
 
     Mount points are never used as identity -- a drive that remounts at
     "/Volumes/Backup 1" must not read as a second, duplicate volume.
+
+    With --volume-uuid, the ID scan would have found is kept as `fs_uuid`, so
+    status can still recognise the drive when it is mounted here. When a
+    filesystem UUID is found, `aliases` lists the IDs a scan without one gave
+    the drive (marker, synthetic), so merge can carry its history over.
     """
-    info: dict = {"uuid": forced, "label": "", "fs_type": "", "total_bytes": None}
+    info: dict = {"uuid": "", "label": "", "fs_type": "", "total_bytes": None}
     mp = mount_point(root)
 
     # diskutil answers for a mount point, not for an arbitrary directory
     # underneath one -- querying the scan root directly returns nothing useful.
-    if platform.system() == "Darwin" and not forced:
+    if platform.system() == "Darwin":
         info.update({k: v for k, v in macos_volume_info(mp).items() if v})
+    elif platform.system() == "Linux":
+        info.update({k: v for k, v in linux_volume_info(mp).items() if v})
 
-    if not info.get("uuid"):
+    marker = read_marker(mp)
+    # Last resort: stable for this host+mount, but not across remounts
+    # at a different path. Prefer --allow-marker for network shares.
+    synthetic = f"synthetic:{platform.node()}:{mp}"
+    if info["uuid"]:
+        info["aliases"] = [a for a in (marker, synthetic) if a]
+    elif marker:
+        info["uuid"] = marker
+    elif allow_marker and not forced:
         marker_path = os.path.join(mp, MARKER)
-        if os.path.exists(marker_path):
-            try:
-                with open(marker_path) as fh:
-                    info["uuid"] = fh.read().strip()
-            except OSError:
-                pass
-        elif allow_marker:
-            new = str(uuidlib.uuid4())
-            try:
-                with open(marker_path, "w") as fh:
-                    fh.write(new + "\n")
-                info["uuid"] = new
-                eprint(f"[bytecat] wrote volume marker {marker_path}")
-            except OSError as e:
-                eprint(f"[bytecat] could not write {marker_path} ({e}); "
-                       f"use --volume-uuid for a stable ID")
+        new = str(uuidlib.uuid4())
+        try:
+            with open(marker_path, "w") as fh:
+                fh.write(new + "\n")
+            info["uuid"] = new
+            eprint(f"[bytecat] wrote volume marker {marker_path}")
+        except OSError as e:
+            eprint(f"[bytecat] could not write {marker_path} ({e}); "
+                   f"use --volume-uuid for a stable ID")
+    if not info["uuid"]:
+        info["uuid"] = synthetic
 
-        if not info.get("uuid"):
-            # Last resort: stable for this host+mount, but not across remounts
-            # at a different path. Prefer --allow-marker for network shares.
-            info["uuid"] = f"synthetic:{platform.node()}:{mp}"
-        info.setdefault("label", os.path.basename(mp) or mp)
+    if forced:
+        # As before: a forced ID takes no label or type from the drive.
+        info = {"uuid": forced, "fs_uuid": info["uuid"], "label": "",
+                "fs_type": "", "total_bytes": None}
 
     try:
         st = os.statvfs(root)
         info["total_bytes"] = info.get("total_bytes") or st.f_blocks * st.f_frsize
-        if not info.get("fs_type"):
-            info["fs_type"] = ""
     except (OSError, AttributeError):
         pass
 

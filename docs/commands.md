@@ -38,7 +38,7 @@ lists files as NDJSON on stdout and opens none of them; pipe it into `merge`.
 |---|---|
 | `roots` | Folders to list. Give each drive one root and keep using the same one: two roots on the same drive are stored as one drive, so a later scan of either marks the other's files missing. |
 | `--host HOST` | Host name to record. Default: this machine's name, up to the first dot. |
-| `--volume-uuid ID` | Use this ID for the drive instead of detecting one. For network shares, and for Linux drives you want to keep their identity across mount points. |
+| `--volume-uuid ID` | Use this ID for the drive instead of detecting one. For network shares and other drives with no filesystem UUID. |
 | `--allow-marker` | When the drive has no ID, write `.bytecat-volume-id` at its root once and use it from then on. The only flag that makes `scan` write anything. |
 | `--include-hidden` | Also descend into folders whose names start with `.`. Hidden files in ordinary folders are listed either way. |
 | `--descend-bundles` | List the files inside bundles (`.photoslibrary`, `.app`, `.lrlibrary` ...) instead of one entry per bundle. |
@@ -47,11 +47,11 @@ lists files as NDJSON on stdout and opens none of them; pipe it into `merge`.
 | `--hash-list FILE` | Instead of scanning, hash the files listed in a work list from `bytecat hash --emit-work` and print the results for `bytecat hash --ingest`. |
 | `--hash-root DIR` | With `--hash-list`: read the listed files under DIR instead of the root they were scanned from, for example inside a container. |
 
-How a drive is identified, in order: `--volume-uuid`; on macOS, the volume UUID from
-`diskutil`; a `.bytecat-volume-id` marker at the drive root; otherwise
-`synthetic:<host>:<mount point>`. On Linux `scan` does not read filesystem UUIDs, so an
-external drive without `--allow-marker` or `--volume-uuid` becomes a new drive when it
-mounts somewhere else.
+How a drive is identified, in order: `--volume-uuid`; the filesystem UUID (from `diskutil`
+on macOS, `/dev/disk/by-uuid` on Linux); a `.bytecat-volume-id` marker at the drive root;
+otherwise `synthetic:<host>:<mount point>`, which changes if the drive mounts somewhere else.
+A Linux drive catalogued under a marker or synthetic ID before UUIDs were read keeps its
+files when it is next scanned.
 
 Always skipped: build and package folders (`node_modules`, `.git`, `target`, `venv` ...),
 OS scratch (`.Trashes`, `.Spotlight-V100`, `System Volume Information` ...), `.DS_Store`,

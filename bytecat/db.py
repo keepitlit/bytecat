@@ -135,6 +135,9 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
     have = {c[1] for c in conn.execute("PRAGMA table_info(files)")}
     if "last_run" not in have:
         conn.execute("ALTER TABLE files ADD COLUMN last_run INTEGER NOT NULL DEFAULT 0")
+    have = {c[1] for c in conn.execute("PRAGMA table_info(volumes)")}
+    if "fs_uuid" not in have:
+        conn.execute("ALTER TABLE volumes ADD COLUMN fs_uuid TEXT")
 
 
 def _migrate_fts(conn: sqlite3.Connection) -> None:
@@ -197,19 +200,30 @@ def upsert_volume(
     fs_type: str = "",
     total_bytes: Optional[int] = None,
     mount: str = "",
+    fs_uuid: str = "",
+    aliases: Iterable[str] = (),
 ) -> int:
+    """Insert or refresh a volume. A drive first catalogued under one of
+    `aliases` (an ID an earlier scan gave it) is renamed, not duplicated."""
+    if not conn.execute("SELECT 1 FROM volumes WHERE host_id = ? AND uuid = ?",
+                        (host_id, uuid)).fetchone():
+        for alias in aliases:
+            if conn.execute("UPDATE volumes SET uuid = ? WHERE host_id = ? AND uuid = ?",
+                            (uuid, host_id, alias)).rowcount:
+                break
     conn.execute(
         """INSERT INTO volumes (host_id, uuid, label, fs_type, total_bytes, last_mount,
-                                state, last_scan)
-           VALUES (?, ?, ?, ?, ?, ?, 'online', datetime('now'))
+                                state, last_scan, fs_uuid)
+           VALUES (?, ?, ?, ?, ?, ?, 'online', datetime('now'), NULLIF(?, ''))
            ON CONFLICT(host_id, uuid) DO UPDATE SET
                label       = COALESCE(NULLIF(excluded.label, ''), volumes.label),
                fs_type     = COALESCE(NULLIF(excluded.fs_type, ''), volumes.fs_type),
                total_bytes = COALESCE(excluded.total_bytes, volumes.total_bytes),
                last_mount  = COALESCE(NULLIF(excluded.last_mount, ''), volumes.last_mount),
                state       = 'online',
-               last_scan   = datetime('now')""",
-        (host_id, uuid, label, fs_type, total_bytes, mount),
+               last_scan   = datetime('now'),
+               fs_uuid     = excluded.fs_uuid""",
+        (host_id, uuid, label, fs_type, total_bytes, mount, fs_uuid),
     )
     return conn.execute(
         "SELECT id FROM volumes WHERE host_id = ? AND uuid = ?", (host_id, uuid)
@@ -251,20 +265,22 @@ def this_host() -> str:
     return platform.node().split(".")[0]
 
 
-def _volume_here(uuid: str, root: str) -> bool:
+def _volume_here(uuid: str, root: str, fs_uuid: str = "") -> bool:
     """Whether the drive with this identity is mounted at its last scan root.
 
     Identity is re-derived the way scan derives it, so a different drive
-    mounted at the same path reads as offline. A synthetic identity now (no
-    UUID, no marker) proves nothing against a forced or marker one, so only a
-    real mismatch counts. Known gap: a local drive scanned with --volume-uuid
-    reads as offline, because diskutil reports its real UUID.
+    mounted at the same path reads as offline. A drive scanned with
+    --volume-uuid is matched by the ID it reported then (fs_uuid); one
+    catalogued under an ID scan has since stopped using (an alias) still
+    matches. A synthetic identity now (no UUID, no marker) proves nothing
+    against a forced or marker one, so only a real mismatch counts.
     """
     if not root or not os.path.isdir(root):
         return False
     from . import scan
-    now = scan.volume_identity(root)["uuid"]
-    if now == uuid:
+    vol = scan.volume_identity(root)
+    now = vol["uuid"]
+    if uuid in (now, *vol.get("aliases", ())) or (fs_uuid and fs_uuid == now):
         return True
     return now.startswith("synthetic:") and not uuid.startswith("synthetic:")
 
@@ -274,11 +290,12 @@ def volume_states(conn: sqlite3.Connection) -> dict[int, str]:
     another host's drives keep the state their last scan left."""
     here = this_host()
     states: dict[int, str] = {}
-    for r in conn.execute("""SELECT v.id, v.uuid, v.last_mount, v.state, h.name AS host
+    for r in conn.execute("""SELECT v.id, v.uuid, v.fs_uuid, v.last_mount, v.state,
+                                    h.name AS host
                              FROM volumes v JOIN hosts h ON h.id = v.host_id"""):
         if r["host"] == here:
-            states[r["id"]] = "online" if _volume_here(r["uuid"], r["last_mount"]) \
-                else "offline"
+            here_now = _volume_here(r["uuid"], r["last_mount"], r["fs_uuid"] or "")
+            states[r["id"]] = "online" if here_now else "offline"
         else:
             states[r["id"]] = r["state"]
     return states
