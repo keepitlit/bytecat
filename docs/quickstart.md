@@ -93,7 +93,7 @@ $ bytecat hash --emit-work nas > work.json
 ```
 
 Only files that share a size with some other file in the catalog are listed; a file with a
-unique size cannot be a copy of anything. In the demo every NAS file shares a size, so all
+unique size cannot be a copy of anything, so it is marked done without being read. In the demo every NAS file shares a size, so all
 12 are listed.
 
 Run the list on the NAS with the same `scan.py`, then load the results:

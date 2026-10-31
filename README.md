@@ -51,7 +51,8 @@ only the last one runs a language model, on a budget:
 
 Most files never get opened at all: if a file's size is unique across the whole
 catalog it cannot have a duplicate, so tier 1 marks it done without reading a
-byte. Tier 4 is ranked by how little we already know: a photo with clean EXIF
+byte, on this machine or another. A drive scanned later with a file of that size
+re-opens it. Tier 4 is ranked by how little we already know: a photo with clean EXIF
 in `2024/Italy/` is skipped so the budget goes to `Scan_0043.pdf` in Downloads.
 
 ## Guarantees
@@ -308,12 +309,6 @@ grep '"type": "error"'` lists them.
 **`warning: exiftool not found; media metadata will be empty`.** Install `exiftool` and
 run `bytecat extract` for dates and camera details on photos and video. Duplicates and
 coverage do not need it.
-
-**The hash row in `status` stays below 100% after hashing another host.** Files on a
-host this machine cannot read are hashed only when `--emit-work` lists them, and a file
-with a unique size is not listed, so a coverage report with that host's drive as the
-source puts it under "Not hashed yet". `bytecat hash --emit-work <host> --hash-all` lists
-those files too, and the host reads them.
 
 **Removing a drive or host.** No command does this. A drive you have wiped or thrown
 away keeps its files in the catalog, and they still count as copies for `--target-host`;

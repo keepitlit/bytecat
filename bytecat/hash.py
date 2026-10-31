@@ -149,6 +149,34 @@ def mark_unique_by_size(conn, volume_ids: list[int]) -> int:
     return cur.rowcount
 
 
+def reopen_by_size(conn, volume_ids: list[int]) -> int:
+    """Re-open files closed out by size whose size another file now shares.
+
+    mark_unique_by_size proves a file has no copy only while its size is
+    unique, and a drive scanned later can share it. Such a file goes back to
+    stage 1, so dupes and coverage do not call it unique when it may not be.
+    A file that could not be read (logged under stage 'hash') stays closed,
+    so it is not retried on every run; --forget clears that.
+    """
+    if not volume_ids:
+        return 0
+    ph = ",".join("?" * len(volume_ids))
+    cur = conn.execute(
+        f"""UPDATE files SET t1_hashed = 0
+            WHERE t1_hashed = 1 AND blob_id IS NULL AND state = 'present'
+              AND is_symlink = 0 AND size_bytes > 0
+              AND volume_id IN ({ph})
+              AND size_bytes IN (
+                  SELECT size_bytes FROM files
+                  WHERE state = 'present' AND is_symlink = 0 AND size_bytes > 0
+                  GROUP BY size_bytes HAVING COUNT(*) > 1)
+              AND id NOT IN (SELECT file_id FROM errors
+                             WHERE stage = 'hash' AND file_id IS NOT NULL)""",
+        volume_ids,
+    )
+    return cur.rowcount
+
+
 def adopt_by_inode(conn, volume_ids: list[int]) -> int:
     """Inherit a fingerprint from a row that describes the SAME file elsewhere.
 
@@ -217,6 +245,9 @@ def forget_volume(conn, volume_id: int) -> int:
         "UPDATE files SET blob_id = NULL, t1_hashed = 0 WHERE volume_id = ?",
         (volume_id,),
     )
+    # Read failures are retried too (see reopen_by_size).
+    conn.execute("DELETE FROM errors WHERE stage = 'hash' AND file_id IN "
+                 "(SELECT id FROM files WHERE volume_id = ?)", (volume_id,))
     return cur.rowcount
 
 
@@ -297,6 +328,7 @@ def run(conn, *, only_volume: Optional[list[int]] = None, workers: int = 0, limi
 
     # Stage 0 -- free elimination. Under --hash-all only symlinks and empty
     # files are closed out; the summary reports them as "need no read".
+    reopen_by_size(conn, vol_ids)
     build_dup_sizes(conn, all_sizes=hash_all)
     stats["skipped_unique"] = mark_unique_by_size(conn, vol_ids)
 
@@ -326,8 +358,10 @@ def run(conn, *, only_volume: Optional[list[int]] = None, workers: int = 0, limi
             done += 1
             if q is None:
                 stats["errors"] += 1
-                # Do not retry forever on a permission error.
+                # Do not retry forever on a permission error: logged, it is
+                # not re-opened by reopen_by_size either.
                 conn.execute("UPDATE files SET t1_hashed = 1 WHERE id = ?", (file_id,))
+                db.log_error(conn, file_id, "hash", OSError("unreadable or not a file"))
                 continue
             stats["quick"] += 1
             if full:
@@ -357,11 +391,21 @@ def emit_work(conn, host: str, *, hash_all: bool = False,
     The host runs `scan.py --hash-list work.json` (stdlib-only) and returns
     NDJSON, which `--ingest` absorbs. Demand-driven, so a remote host only ever
     reads the files that are actually duplicate candidates.
+
+    Its other files are closed out here, as run() does for a local drive: a
+    size no other file in the catalog has cannot be a copy of anything, on any
+    host, so it needs no read. Without this they stayed unhashed forever and
+    coverage from that host called them "not hashed yet".
     """
+    only_volume = only_volume or []
+    vol_ids = [r[0] for r in conn.execute(
+        "SELECT v.id FROM volumes v JOIN hosts h ON h.id = v.host_id WHERE h.name = ?",
+        (host,)) if not only_volume or r[0] in only_volume]
+    reopen_by_size(conn, vol_ids)
     build_dup_sizes(conn, all_sizes=hash_all)
+    closed = mark_unique_by_size(conn, vol_ids) if vol_ids else 0
     # is_symlink/size guards mirror candidates(): under --hash-all the dup_sizes
     # filter no longer excludes them, and neither is worth shipping to a host.
-    only_volume = only_volume or []
     extra = (f" AND v.id IN ({','.join('?' * len(only_volume))})"
              if only_volume else "")
     rows = conn.execute(
@@ -381,7 +425,8 @@ def emit_work(conn, host: str, *, hash_all: bool = False,
         sys.stdout,
     )
     if conn.execute("SELECT 1 FROM hosts WHERE name = ?", (host,)).fetchone():
-        print(f"[bytecat] {len(rows):,} files to hash on {host}", file=sys.stderr)
+        unread = f"; {closed:,} need no read" if closed else ""
+        print(f"[bytecat] {len(rows):,} files to hash on {host}{unread}", file=sys.stderr)
     else:
         print(f"[bytecat] no host named {host}", file=sys.stderr)
 

@@ -85,15 +85,15 @@ usage: bytecat hash [-h] [--volume VOLUME] [--workers WORKERS] [--limit LIMIT]
 Use it to find out which files are identical (tier 1). `pipeline` runs it for you. It reads
 every drive of this machine's that is mounted now; another host's drives are hashed on that
 host, with `--emit-work`, even if their path exists here. A file whose size no other
-file in the catalog shares is marked done without being read; files that share a size are
-hashed with BLAKE2b.
+file in the catalog shares is marked done without being read, until a later scan adds a file
+of that size; files that share a size are hashed with BLAKE2b.
 
 | flag | what it does |
 |---|---|
 | `--volume VOLUME` | Restrict to one drive: its UUID, label or mount, matched exactly. |
 | `--workers N` | Parallel readers. Default: the CPU count, at most 8. |
 | `--limit N` | Hash at most N files this run. |
-| `--emit-work HOST` | Print the work list of files HOST must hash (JSON, to stdout) instead of hashing. |
+| `--emit-work HOST` | Print the work list of files HOST must hash (JSON, to stdout) instead of hashing. HOST's files with a unique size are marked done, as `hash` does here. |
 | `--ingest NDJSON` | Load the results of `scan.py --hash-list` run on another host. |
 | `--hash-all` | Also hash files with a unique size, so every file gets a fingerprint. With `--forget`, files already skipped are read too. |
 | `--no-inode-cache` | Do not reuse fingerprints for moved, renamed or hard-linked files; read them again. |
