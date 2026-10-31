@@ -78,7 +78,7 @@ def keyword_search(conn, query: str, limit: int) -> list[int]:
     return [r[0] for r in rows]
 
 
-def vector_search(query: str, limit: int) -> list[int]:
+def vector_search(query: str, limit: int) -> list[tuple[int, dict]]:
     try:
         lm = ModelServer()
         if not lm.models():
@@ -88,10 +88,26 @@ def vector_search(query: str, limit: int) -> list[int]:
             raise ModelServerDown(f"no model server or model at {lm.base}")
         vec = lm.embed([query])[0]
         hits = Chroma().query(vec, n=limit)
-        return [int(i) for i, _dist, _meta in hits]
+        return [(int(i), meta or {}) for i, _dist, meta in hits]
     except Exception as e:
         note_once(f"[bytecat] keyword results only: {failure_reason(e)}")
         return []
+
+
+def current(conn, hits: list[tuple[int, dict]]) -> list[int]:
+    """File ids of the vector hits that still describe their file.
+
+    `forget` deletes rows, so SQLite can hand a forgotten file's id to a new
+    one while the old vector sits in Chroma until `embed --reset`. The size
+    stored with each vector tells the two apart.
+    """
+    if not hits:
+        return []
+    ids = [fid for fid, _ in hits]
+    sizes = dict(conn.execute(
+        f"SELECT id, size_bytes FROM files WHERE id IN ({','.join('?' * len(ids))})", ids))
+    return [fid for fid, meta in hits
+            if fid in sizes and meta.get("size", sizes[fid]) == sizes[fid]]
 
 
 def rrf(rankings: list[list[int]], k: int = RRF_K) -> list[tuple[int, float]]:
@@ -218,7 +234,7 @@ def search(conn, query: str, *, limit: int = 20, kind: str = "", host: str = "",
     """
     pool = pool or max(limit * 4, 60)
     kw = keyword_search(conn, query, pool)
-    vec = vector_search(query, pool)
+    vec = current(conn, vector_search(query, pool))
     fused = rrf([r for r in (kw, vec) if r])
     ordered = [fid for fid, _ in fused]
     rows = hydrate(conn, ordered, kind=kind, host=host,

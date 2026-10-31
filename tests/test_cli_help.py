@@ -22,7 +22,7 @@ def check(name, cond, detail=""):
 
 
 COMMANDS = ["cli", "scan", "merge", "hash", "extract", "embed", "enrich", "ask",
-            "report_dupes", "report_coverage", "audit", "eval"]
+            "report_dupes", "report_coverage", "audit", "eval", "forget"]
 
 seen: list = []
 real = argparse._ActionsContainer.add_argument
@@ -45,7 +45,7 @@ try:
         try:
             with contextlib.redirect_stdout(io.StringIO()), \
                     contextlib.redirect_stderr(io.StringIO()):
-                (mod.main(["--help"]) if name == "audit" else mod.main())
+                (mod.main(["--help"]) if name in ("audit", "forget") else mod.main())
         except SystemExit:
             pass
         finally:

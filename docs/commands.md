@@ -5,14 +5,15 @@ list. The examples use `bytecat`; from a clone without installing, type `python3
 instead.
 
 Catalog state lives in `~/.local/share/bytecat/` (or `$BYTECAT_HOME`); reports go to its
-`reports/` folder. No command deletes, moves or renames your files.
+`reports/` folder. No command deletes, moves or renames your files; `forget` removes
+catalog rows only.
 
 - [Index](#index): `scan`, `merge`, `hash`, `pipeline`, `extract`, `embed`, `enrich`
 - [Find duplicates](#find-duplicates): `dupes`
 - [Check coverage](#check-coverage): `coverage`
 - [Search](#search): `ask`
 - [Verify](#verify): `audit coverage`, `audit dupes`
-- [Maintenance](#maintenance): `status`, `hash --forget`, `embed --reset`, `eval`
+- [Maintenance](#maintenance): `status`, `forget`, `hash --forget`, `embed --reset`, `eval`
 - [Environment variables](#environment-variables)
 - [Exit codes](#exit-codes)
 
@@ -311,6 +312,23 @@ with its scan root (or the folder holding all its roots), label, ID, file count 
 that are not mounted now. Progress rows are named after the command that advances them. The
 last five runs are listed, in local time.
 
+### forget
+
+```
+usage: bytecat forget [-h] [--volume DRIVE] [--host HOST] [--yes]
+```
+
+Use it for a drive you have wiped, sold or scanned by mistake. Removes the drive's files,
+descriptions and fingerprints no other file shares from the catalog, then lists what went.
+Nothing on the drive is opened. It asks first; anything but `y` keeps everything and exits 1.
+Search vectors stay in Chroma until `embed --reset`; `ask` ignores them.
+
+| flag | what it does |
+|---|---|
+| `--volume DRIVE` | The drive to remove: UUID, label or mount path, as `coverage` takes them. |
+| `--host HOST` | Alone, remove the host and all its drives. With `--volume`, the host that drive is on. |
+| `--yes` | Do not ask first. |
+
 ### Re-reading a drive: `hash --forget`
 
 `bytecat hash --forget --volume DRIVE` clears one drive's fingerprints and reads it again.
@@ -361,8 +379,8 @@ The model and Chroma addresses must be loopback (`127.0.0.1`, `localhost`, `::1`
 | code | meaning |
 |---|---|
 | 0 | Done. `status` also exits 0 when there is no catalog yet. |
-| 1 | `audit` found a disagreement; or `embed`, `enrich` or a `pipeline` step failed. A `pipeline` that skips `embed` for want of a server exits 0. |
-| 2 | A flag or argument is wrong; no catalog yet (`ask`, `dupes`, `coverage`, `audit`, `eval`); `hash --forget` without `--volume`; `enrich --budget` not positive; `ask --host` names an unknown host. |
+| 1 | `audit` found a disagreement; `forget` was not confirmed or named nothing; or `embed`, `enrich` or a `pipeline` step failed. A `pipeline` that skips `embed` for want of a server exits 0. |
+| 2 | A flag or argument is wrong; no catalog yet (`ask`, `dupes`, `coverage`, `audit`, `eval`, `forget`); `hash --forget` without `--volume`; `forget` without `--volume` or `--host`; `enrich --budget` not positive; `ask --host` names an unknown host. |
 
 Errors from `sys.exit` with a message (an unknown drive, an uncatalogued audit path, a
 missing target) also exit 1.

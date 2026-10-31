@@ -311,9 +311,9 @@ grep '"type": "error"'` lists them.
 run `bytecat extract` for dates and camera details on photos and video. Duplicates and
 coverage do not need it.
 
-**Removing a drive or host.** No command does this. A drive you have wiped or thrown
-away keeps its files in the catalog, and they still count as copies for `--target-host`;
-name the drives you trust with `--target-volume` instead.
+**A wiped or lost drive still counts as a copy.** Its files stay in the catalog, and
+`--target-host` counts them. Remove it with `bytecat forget --volume DRIVE`, or a whole
+machine with `bytecat forget --host HOST`; files on disk are not touched.
 
 ## Tests
 

@@ -196,6 +196,7 @@ def main(argv=None) -> int:
         ("coverage", "bytecat.report_coverage",
          "report a volume's files missing from the targets"),
         ("audit", "bytecat.audit", "re-check coverage or dupes against the disk"),
+        ("forget", "bytecat.forget", "remove a drive or host from the catalog"),
         ("eval", "bytecat.eval", "measure search quality"),
     )
 
