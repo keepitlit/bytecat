@@ -175,7 +175,7 @@ its files in the catalog. Each progress row is named after the command that adva
 ```text
 $ bytecat dupes
 [bytecat] 10 duplicate groups · 841.8 KB reclaimable · 8 span multiple machines (771.7 KB)
-[bytecat] report written to ~/demo/bytecat-data/reports/duplicates-20261030-1938.md
+[bytecat] report written to ~/demo/bytecat-data/reports/duplicates-20261030-193851.md
 ```
 
 The terminal gets totals only; open the report for the paths. Two groups from it:
@@ -212,7 +212,7 @@ $ bytecat coverage --source-volume OLD-USB --target-host nas
 [bytecat] not on target                 7 files    324.3 KB
 [bytecat]   of which never read         3 files    176.5 KB
 [bytecat] on target                     6 files    473.1 KB
-[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-1938.md
+[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-193853.md
 ```
 
 The report lists every file that is not on the NAS:
@@ -248,7 +248,7 @@ $ bytecat coverage --source-volume OLD-USB --target-host nas --target-host lapto
 [bytecat] not on target                 5 files    254.2 KB
 [bytecat]   of which never read         3 files    176.5 KB
 [bytecat] on target                     8 files    543.2 KB
-[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-1938.md
+[bytecat] report written to ~/demo/bytecat-data/reports/coverage-20261030-193855.md
 ```
 
 `IMG_0413.jpg` and `budget-2025.xlsx` are on the laptop, so 5 files remain: copy those
@@ -272,7 +272,7 @@ $ bytecat audit coverage --source /Volumes/OLD-USB --target ~/demo/nas
 [bytecat]   DISAGREE, disk has it, bytecat did not say so:         0
 [bytecat]   on disk, not in catalog (source)             :         0
 [bytecat]   in catalog, not found or not read (source)   :         0
-[bytecat] report written to ~/demo/bytecat-data/reports/audit-coverage-20261030-1938.md
+[bytecat] report written to ~/demo/bytecat-data/reports/audit-coverage-20261030-193858.md
 ```
 
 `catalog confirmed` is the verdict. A non-zero `DISAGREE, bytecat says copied, disk says no`
@@ -295,7 +295,7 @@ $ bytecat audit dupes --path ~/demo/nas
 [bytecat]   on disk, not in catalog                 :         0
 [bytecat]   in catalog, not found or skipped on disk:         0
 [bytecat]   size changed since the scan             :         0
-[bytecat] report written to ~/demo/bytecat-data/reports/audit-dupes-20261030-1938.md
+[bytecat] report written to ~/demo/bytecat-data/reports/audit-dupes-20261030-193859.md
 ```
 
 ## 10. Find a file
