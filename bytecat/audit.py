@@ -696,18 +696,20 @@ def main(argv=None) -> int:
 
     c = sub.add_parser("coverage",
                        help="check every source file's content is on the target")
-    c.add_argument("--source", required=True)
-    c.add_argument("--target", required=True)
+    c.add_argument("--source", required=True, help="the folder being retired")
+    c.add_argument("--target", required=True, help="the folder that should hold its copies")
 
     d = sub.add_parser("dupes", help="check duplicate groups are identical")
-    d.add_argument("--path", required=True)
-    d.add_argument("--min-fanout", type=int, default=2)
+    d.add_argument("--path", required=True, help="folder whose duplicate groups to re-read")
+    d.add_argument("--min-fanout", type=int, default=2,
+                   help="only groups with at least N members under --path")
     d.add_argument("--no-drift", action="store_true",
                    help="skip listing files added, removed or resized since the scan")
 
     for p in (c, d):
-        p.add_argument("--workers", type=int, default=0)
-        p.add_argument("--out", default="")
+        p.add_argument("--workers", type=int, default=0,
+                       help="parallel readers (default: CPU count, at most 8)")
+        p.add_argument("--out", default="", help="write the report here")
         p.add_argument("--emit-manifest", default="", metavar="PATH",
                        help="also write the SHA-256 digests in hashdeep format")
 

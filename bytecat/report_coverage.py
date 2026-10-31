@@ -162,10 +162,13 @@ def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(prog="bytecat coverage",
                                  description="bytecat coverage report (read-only)")
-    ap.add_argument("--source-volume", required=True)
-    ap.add_argument("--target-volume", action="append", default=[])
-    ap.add_argument("--target-host", action="append", default=[])
-    ap.add_argument("--out", default="")
+    ap.add_argument("--source-volume", required=True,
+                    help="the drive to check: UUID, label or mount")
+    ap.add_argument("--target-volume", action="append", default=[],
+                    help="a drive that counts as a copy; repeat for more")
+    ap.add_argument("--target-host", action="append", default=[],
+                    help="every drive scanned on HOST counts as a copy; repeatable")
+    ap.add_argument("--out", default="", help="write the report here")
     args = ap.parse_args()
 
     try:

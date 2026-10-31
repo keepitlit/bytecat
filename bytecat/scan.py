@@ -391,18 +391,21 @@ def main() -> int:
     # Standalone on a NAS host (python3 scan.py) it keeps its own name.
     ap = argparse.ArgumentParser(prog="bytecat scan" if __package__ else None,
         description="list files under each root as NDJSON for bytecat merge")
-    ap.add_argument("roots", nargs="*")
-    ap.add_argument("--host", default=platform.node().split(".")[0])
+    ap.add_argument("roots", nargs="*", help="folders to list; one root per drive")
+    ap.add_argument("--host", default=platform.node().split(".")[0],
+                    help="host name to record (default: this machine's name)")
     ap.add_argument("--volume-uuid", default="",
                     help="set the volume ID (for network shares)")
     ap.add_argument("--allow-marker", action="store_true",
                     help=f"write {MARKER} at the volume root if it has no ID")
-    ap.add_argument("--include-hidden", action="store_true")
+    ap.add_argument("--include-hidden", action="store_true",
+                    help="also descend into folders whose names start with .")
     ap.add_argument("--descend-bundles", action="store_true",
                     help="list the files inside bundles (.photoslibrary, .app, ...)")
     ap.add_argument("--min-size", type=int, default=1,
                     help="skip files smaller than this many bytes (default: skip empty)")
-    ap.add_argument("--progress-every", type=int, default=20000)
+    ap.add_argument("--progress-every", type=int, default=20000,
+                    help="progress line every N files (default 20000; 0 for none)")
     ap.add_argument("--hash-list", default="",
                     help="hash files listed by `bytecat hash --emit-work`; "
                          "return the output to --ingest")

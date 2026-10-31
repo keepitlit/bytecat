@@ -271,7 +271,7 @@ def run_tier2(conn, limit: int = 0) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(prog="bytecat extract",
         description="read media metadata and file types (tier 2)")
-    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--limit", type=int, default=0, help="describe at most N files")
     args = ap.parse_args()
 
     conn = db.open_catalog()

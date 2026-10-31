@@ -413,9 +413,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="bytecat hash",
         description="hash file contents to find duplicates (tier 1)")
     ap.add_argument("--volume", default="", help="restrict to one drive: its UUID, label or mount")
-    ap.add_argument("--workers", type=int, default=0)
+    ap.add_argument("--workers", type=int, default=0,
+                    help="parallel readers (default: CPU count, at most 8)")
     ap.add_argument("--limit", type=int, default=0, help="hash at most N files")
-    ap.add_argument("--emit-work", metavar="HOST", default="")
+    ap.add_argument("--emit-work", metavar="HOST", default="",
+                    help="print the JSON work list HOST must hash, instead of hashing")
     ap.add_argument("--hash-all", action="store_true",
                     help="also hash unique-size files; "
                          "with --forget, already-skipped ones too")
@@ -424,7 +426,8 @@ def main() -> int:
                          "or hard-linked files")
     ap.add_argument("--forget", action="store_true",
                     help="clear --volume's fingerprints and hash it again")
-    ap.add_argument("--ingest", metavar="NDJSON", default="")
+    ap.add_argument("--ingest", metavar="NDJSON", default="",
+                    help="load results of scan.py --hash-list from another host")
     args = ap.parse_args()
 
     conn = db.open_catalog()

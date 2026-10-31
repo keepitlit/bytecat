@@ -254,7 +254,8 @@ def main() -> int:
         description="label files with a local model (tier 4)")
     ap.add_argument("--budget", type=int, default=200,
                     help="at most N files (default 200)")
-    ap.add_argument("--kinds", default="")
+    ap.add_argument("--kinds", default="",
+                    help="only these kinds, comma-separated (default: document,data,other,code)")
     ap.add_argument("--vision", action="store_true",
                     help="label images; BYTECAT_CHAT_MODEL must accept images")
     args = ap.parse_args()

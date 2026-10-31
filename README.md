@@ -337,6 +337,7 @@ temporary catalog and asserts the audit catches every one and exits non-zero.
 each lands in the right bucket; `test_hash_all.py` asserts `--hash-all` reads the
 size-unique files tier 1 skips and changes nothing else; `test_copy_budget.py`
 holds every message bytecat prints to one sentence of at most 12 words.
+`test_cli_help.py` fails on any flag without `--help` text.
 
 ## Measuring ranking changes
 

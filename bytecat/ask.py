@@ -237,11 +237,12 @@ def search(conn, query: str, *, limit: int = 20, kind: str = "", host: str = "",
 def main() -> int:
     ap = argparse.ArgumentParser(prog="bytecat ask",
                                  description="search the bytecat catalog")
-    ap.add_argument("query", nargs="+")
-    ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("query", nargs="+", help="words to search for")
+    ap.add_argument("--limit", type=int, default=20, help="results to show (default 20)")
     ap.add_argument("--kind", default="",
-                    choices=sorted(set(db.KIND_BY_EXT.values()) | {"other"}))
-    ap.add_argument("--host", default="")
+                    choices=sorted(set(db.KIND_BY_EXT.values()) | {"other"}),
+                    help="only files of this kind; needs extract")
+    ap.add_argument("--host", default="", help="only files on this host")
     ap.add_argument("--online-only", action="store_true",
                     help="hide files on offline volumes")
     ap.add_argument("--full-path", action="store_true",

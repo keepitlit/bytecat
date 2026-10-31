@@ -146,7 +146,8 @@ def main(argv=None) -> int:
         ("merge", "bytecat.merge", "add scan output to the catalog"),
     )
     p = sub.add_parser("pipeline", help="run hash + extract + embed in order")
-    p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--limit", type=int, default=0,
+                   help="passed to extract and embed as their --limit")
     dispatched(
         ("hash", "bytecat.hash", "hash file contents"),
         ("extract", "bytecat.extract", "read file metadata"),

@@ -198,9 +198,10 @@ def main() -> int:
                                  description="bytecat duplicate report (read-only)")
     ap.add_argument("--min-bytes", type=int, default=1,
                     help="ignore groups reclaiming less than this")
-    ap.add_argument("--cross-host-only", action="store_true")
+    ap.add_argument("--cross-host-only", action="store_true",
+                    help="only groups with copies on more than one machine")
     ap.add_argument("--top", type=int, default=500, help="groups to list")
-    ap.add_argument("--out", default="")
+    ap.add_argument("--out", default="", help="write the report here")
     args = ap.parse_args()
 
     try:
