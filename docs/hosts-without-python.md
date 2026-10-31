@@ -16,16 +16,18 @@ audit against a bind-mounted directory.
 2. Find a container with Python 3.9+ (`docker exec <name> python3 --version`). Many media
    and download containers have one.
 
-3. Run the audit inside it, mounting the staging directory and the tree under test:
+3. Run the audit inside it, mounting the staging directory and the tree under test. Mount
+   the tree at the same path it was scanned from: `--path` must be at or under a scan root
+   the catalog knows, or the audit stops with `not catalogued`.
 
    ```sh
    docker run --rm \
      -v /mnt/cache/bytecat-audit:/work \
-     -v /mnt/user/media:/scan:ro \
+     -v /mnt/user/media:/mnt/user/media:ro \
      -e BYTECAT_HOME=/work \
      -w /work \
      <image-with-python> \
-     python3 -m bytecat.audit dupes --path /scan
+     python3 -m bytecat.audit dupes --path /mnt/user/media
    ```
 
 4. Copy the report back from `/mnt/cache/bytecat-audit/reports/` and **delete the staging

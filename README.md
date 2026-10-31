@@ -17,6 +17,10 @@ fclones, rmlint and czkawka find duplicates on one machine. bytecat is for the
 person with a NAS and a drawer of external drives who wants to know what is
 safe to unplug.
 
+**Start here:** [docs/quickstart.md](docs/quickstart.md) goes from install to "what on
+this drive exists nowhere else?" with real output at every step.
+[docs/commands.md](docs/commands.md) lists every command and flag.
+
 ## Install
 
 Python 3.9+, nothing else to install:
@@ -34,15 +38,15 @@ semantic search. Tiers 0–1 (the coverage and duplicate answers) need none of t
 ## Why it's shaped this way
 
 The hard problem isn't understanding files, it's cost. Running a language model
-over a million files is infeasible, so each tier runs on a strict subset of the
-one before:
+over a million files is infeasible, so each tier reads as little as it can, and
+only the last one runs a language model, on a budget:
 
 | Tier | What it does | Runs on |
 |---|---|---|
 | 0 walk | path, size, mtime, inode | everything (minutes) |
 | 1 hash | size bucket → head/tail → full hash only in collision buckets | everything (I/O-bound) |
-| 2 metadata | EXIF, media props, document properties | typed files (fast) |
-| 3 text + vectors | markitdown → local embedding model → Chroma | documents |
+| 2 metadata | file kind; EXIF and media properties via exiftool | everything; exiftool only on photos, audio, video |
+| 3 text + vectors | path, name and text (markitdown for documents) → local embedding model → Chroma | everything; text only from documents, code and data |
 | 4 LLM labels | title, gist, category for still-ambiguous files | **budgeted** |
 
 Most files never get opened at all: if a file's size is unique across the whole
@@ -63,7 +67,9 @@ in `2024/Italy/` is skipped so the budget goes to `Scan_0043.pdf` in Downloads.
   to Google's speech API, so audio and video are refused outright and indexed by
   path and metadata instead. Never restore the catch-all.
 - **Read-only.** Phase 1 never moves, renames, deletes, or touches mtimes. The
-  duplicate report has no delete path and no `--apply` flag, by design.
+  duplicate report has no delete path and no `--apply` flag, by design. The one
+  write to a scanned tree is `scan --allow-marker`, which, when asked, puts a
+  `.bytecat-volume-id` file at the root of a drive that has no ID of its own.
 - **Nothing duplicated.** Extracted text is embedded and discarded. What persists
   is a vector, a character count, and a checksum. Chroma's `documents` field is
   deliberately left null.
@@ -83,6 +89,10 @@ Syncthing or Dropbox tree replicates to every peer continuously.
               reports/                   duplicate / coverage / audit reports
     vectors Chroma on :8100, collection `bytecat_files`  (derived, rebuildable)
 
+To uninstall: `pipx uninstall bytecat`, then delete the data directory. Drives scanned
+with `--allow-marker` keep a `.bytecat-volume-id` file at their root, and Chroma keeps
+the `bytecat_files` collection in its own data path.
+
 ## Requirements by tier
 
 | need | for | how |
@@ -95,7 +105,8 @@ Syncthing or Dropbox tree replicates to every peer continuously.
 
 ### Model server
 
-Any server that speaks `/v1/embeddings` and `/v1/chat/completions` on `127.0.0.1`:
+Any server on this machine that speaks `/v1/models`, `/v1/embeddings` and
+`/v1/chat/completions`. bytecat checks `/v1/models` first and stops if it lists no model:
 
 | variable | default | |
 |---|---|---|
@@ -106,7 +117,8 @@ Any server that speaks `/v1/embeddings` and `/v1/chat/completions` on `127.0.0.1
 | `BYTECAT_CHROMA_BASE` | `http://127.0.0.1:8100` | |
 | `BYTECAT_CHROMA_COLLECTION` | `bytecat_files` | |
 
-Non-loopback values are refused; that is the invariant, not a default.
+Only `127.0.0.1`, `localhost`, `::1` and `0.0.0.0` are accepted; anything else is refused.
+That is the invariant, not a default.
 
 ### Setting them up so they stay local
 
@@ -118,11 +130,12 @@ with their own network stacks, and two of them phone home unless told not to.
   file names or contents), but it is still an off-box call, and bytecat cannot set
   the flag for you because it speaks HTTP to Chroma rather than importing it.
 - **markitdown:** keep `SpeechRecognition` uninstalled from its venv:
-  `uv pip uninstall --python ~/.local/share/uv/tools/markitdown/bin/python SpeechRecognition`.
+  `pipx runpip markitdown uninstall -y SpeechRecognition` (installed with `uv tool`:
+  `uv pip uninstall --python ~/.local/share/uv/tools/markitdown/bin/python SpeechRecognition`).
   The allowlist in `extract.py` already stops bytecat handing it audio; removing
   the package makes the upload path absent rather than merely unreachable.
-  ⚠️ `uv tool upgrade markitdown` reinstalls it, because `markitdown[all]`
-  declares it; re-check after any upgrade.
+  Upgrading markitdown reinstalls it, because `markitdown[all]` declares it;
+  re-check after any upgrade.
 - **Your model server** is a separate program. bytecat guarantees it dials loopback;
   what the server does with that request is its own business. LM Studio, for
   instance, is closed-source and makes its own calls for model search, downloads
@@ -133,15 +146,16 @@ with their own network stacks, and two of them phone home unless told not to.
 ## Use
 
 ```sh
-# 1. index this machine
-python3 -m bytecat scan ~/Documents ~/Pictures | python3 -m bytecat merge
+# 1. index this machine: one root per drive, and the same root every time
+python3 -m bytecat scan ~ | python3 -m bytecat merge
 
 # a host you can't mount locally: copy the one stdlib-only file over
 scp bytecat/scan.py nas:/tmp/
 ssh nas 'python3 /tmp/scan.py /mnt/user --host nas' | python3 -m bytecat merge
 
-# an external drive: identity follows the volume UUID, not the mount point,
-# so it survives remounting at "/Volumes/Backup 1"
+# an external drive: on macOS its identity is the volume UUID, not the mount
+# point, so it survives remounting at "/Volumes/Backup 1". On Linux add
+# --allow-marker the first time, or it is identified by its mount point.
 python3 -m bytecat scan /Volumes/Backup | python3 -m bytecat merge
 
 # 2. the cheap tiers (hash + metadata + vectors)
@@ -159,9 +173,10 @@ python3 -m bytecat ask "tax return" --host nas
 # 5. what exists nowhere else: the report to read before unplugging a drive
 python3 -m bytecat coverage --source-volume Backup --target-host nas
 
-# 6. cross-check a verdict against the disk itself, under a second algorithm
-python3 -m bytecat audit coverage --source "/Volumes/Backup 1" --target /mnt/user/media
-python3 -m bytecat audit dupes --path /mnt/user/media
+# 6. cross-check a verdict against the disk itself, under a second algorithm;
+#    both paths must be readable here, at or under where they were scanned
+python3 -m bytecat audit coverage --source /Volumes/Backup --target ~/Pictures
+python3 -m bytecat audit dupes --path ~/Pictures
 
 # 7. optional: spend LLM time on the files we understand least
 python3 -m bytecat enrich --budget 200
@@ -178,9 +193,13 @@ duplicate candidates:
 
 ```sh
 python3 -m bytecat hash --emit-work nas > work.json
-# run work.json on that host, return NDJSON
+scp work.json bytecat/scan.py nas:/tmp/
+ssh nas 'cd /tmp && python3 scan.py --hash-list work.json' > results.ndjson
 python3 -m bytecat hash --ingest results.ndjson
 ```
+
+If the files sit under a different path on the host than the one scanned (a
+container bind mount, say), add `--hash-root <that path>` to the `scan.py` line.
 
 ## Rescanning after a reorganisation
 
@@ -235,8 +254,67 @@ Photos library shows up as "180 GB, 60,000 files" rather than disappearing.
 Pass `--descend-bundles` to index their contents instead.
 
 > On macOS, reading inside `Photos Library.photoslibrary` requires Full Disk
-> Access for your terminal. Without it the scan reports the bundle at 0 bytes
-> (the failure mode is `Interrupted system call`).
+> Access for your terminal (System Settings, Privacy & Security). Without it the
+> scan reports the bundle at 0 bytes (the failure mode is `Interrupted system call`);
+> grant it and scan again.
+
+## Troubleshooting
+
+**`no catalog at …; start with: bytecat scan ~/Documents | bytecat merge`.** Nothing has
+been merged into this catalog yet, or `BYTECAT_HOME` points somewhere other than where
+you merged.
+
+**`pipeline` ends with `embed failed`, after `no model server or model at
+http://127.0.0.1:1234/v1`.** No model server is running, or it lists no model. `hash` and
+`extract` have already finished, so `dupes`, `coverage`, `audit` and keyword `ask` work.
+For search by meaning, start a server with an embedding model loaded, start Chroma, and
+re-run `pipeline`.
+
+**`Chroma not reachable at http://127.0.0.1:8100`** from `embed`, or `no Chroma at …`
+from `ask`. Start Chroma as shown under Requirements by tier, or set
+`BYTECAT_CHROMA_BASE`.
+
+**`refusing non-loopback model endpoint '…'`** (or `Chroma endpoint`). The model server
+and Chroma must run on this machine. No setting allows a remote one.
+
+**`BYTECAT_CHAT_MODEL not set`, or `set BYTECAT_CHAT_MODEL to a model your server has
+loaded`.** `enrich` and `ask --smart` need a chat model; set the variable to a model name
+from your server's `/v1/models`.
+
+**`no catalogued volume is mounted here; remote hosts: --emit-work HOST`.** `hash` reads
+only drives whose scan root exists on this machine. Plug the drive in, or hash another
+host's files there (see "Hashing a host you can't mount").
+
+**`no volume 'X'; bytecat status lists them`, or `'X' matches 2 volumes`.** Drives are
+named by UUID, label or scan root, matched exactly. Copy one from `bytecat status`; when two
+drives share a label, pass the UUID.
+
+**`<path> not catalogued; scan first`** from `audit`. The path must be at or under the
+folder a drive was scanned from, as the catalog recorded it. A drive scanned at
+`/Volumes/Backup` and now mounted at `/Volumes/Backup 1` needs a rescan first.
+
+**A drive shows `offline` in `status` but is plugged in.** It is mounted somewhere other
+than its last scan root; scan it again from where it is now. On macOS, a drive on this
+machine scanned with `--volume-uuid` always reads as offline, because `diskutil` reports a
+different ID.
+
+**`scan` reports `N paths unreadable`.** Those folders could not be listed, usually for
+permissions, and their files are not in the catalog. `bytecat scan <root> 2>/dev/null |
+grep '"type": "error"'` lists them.
+
+**`warning: exiftool not found; media metadata will be empty`.** Install `exiftool` and
+run `bytecat extract` for dates and camera details on photos and video. Duplicates and
+coverage do not need it.
+
+**The hash row in `status` stays below 100% after hashing another host.** Files on a
+host this machine cannot read are hashed only when `--emit-work` lists them, and a file
+with a unique size is not listed, so a coverage report with that host's drive as the
+source puts it under "Not hashed yet". `bytecat hash --emit-work <host> --hash-all` lists
+those files too, and the host reads them.
+
+**Removing a drive or host.** No command does this. A drive you have wiped or thrown
+away keeps its files in the catalog, and they still count as copies for `--target-host`;
+name the drives you trust with `--target-volume` instead.
 
 ## Tests
 
@@ -255,6 +333,10 @@ feature under test is inert: `test_inode_cache.py` renames files that *must* be
 re-read without the cache and asserts the two modes disagree about the work
 while agreeing about the answer; `test_audit.py` plants deliberate lies in a
 temporary catalog and asserts the audit catches every one and exits non-zero.
+`test_coverage.py` seeds files that are and are not on the target and asserts
+each lands in the right bucket; `test_hash_all.py` asserts `--hash-all` reads the
+size-unique files tier 1 skips and changes nothing else; `test_copy_budget.py`
+holds every message bytecat prints to one sentence of at most 12 words.
 
 ## Measuring ranking changes
 
