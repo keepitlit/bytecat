@@ -204,6 +204,8 @@ def main() -> int:
         os.environ["BYTECAT_HOME"] = str(tmp / "data")
         # Keep vectors out of the real collection.
         os.environ["BYTECAT_CHROMA_COLLECTION"] = "bytecat_test"
+        # This machine is hostA; hostB hashes its own files, as a NAS would.
+        os.environ["BYTECAT_HOST"] = "hostA"
         env = {**os.environ}
         py = sys.executable
 
@@ -289,6 +291,12 @@ def main() -> int:
         print("\n[hashing + duplicates]")
         r = run([py, "-m", "bytecat.hash"], env)
         check("hash run succeeded", r.returncode == 0, r.stderr[-200:])
+        (tmp / "work.json").write_text(
+            run([py, "-m", "bytecat.hash", "--emit-work", "hostB"], env).stdout)
+        (tmp / "results.ndjson").write_text(
+            run([py, "-m", "bytecat.scan", "--hash-list", str(tmp / "work.json")], env).stdout)
+        r = run([py, "-m", "bytecat.hash", "--ingest", str(tmp / "results.ndjson")], env)
+        check("hostB's hashes ingested", r.returncode == 0, r.stderr[-200:])
 
         from bytecat.report_dupes import collect
         groups = collect(db.connect(readonly=True), min_bytes=1, cross_host_only=False)

@@ -25,7 +25,9 @@ def check(name, cond, detail=""):
 
 
 def env_for(home):
-    return dict(os.environ, BYTECAT_HOME=str(home), XDG_DATA_HOME=str(home))
+    return dict(os.environ, BYTECAT_HOME=str(home), XDG_DATA_HOME=str(home),
+                # Scanned as --host h: the tiers read only this host's drives.
+                BYTECAT_HOST="h")
 
 
 def ingest(home, root, uuid):

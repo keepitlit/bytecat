@@ -39,7 +39,9 @@ try:
     (src / "orphans" / "collide.bin").write_bytes(b"A" * same)
     (tgt / "renamed" / "collide-other.bin").write_bytes(b"B" * same)
 
-    env = dict(os.environ, BYTECAT_HOME=str(tmp / "home"), XDG_DATA_HOME=str(tmp / "home"))
+    # This machine is srchost; tgthost hashes its own files, as a NAS would.
+    env = dict(os.environ, BYTECAT_HOME=str(tmp / "home"), XDG_DATA_HOME=str(tmp / "home"),
+               BYTECAT_HOST="srchost")
     def run(cmd):
         return subprocess.run([sys.executable, "-m"] + cmd, cwd=ROOT, env=env,
                               capture_output=True, text=True)
@@ -55,6 +57,11 @@ try:
 
     h = run(["bytecat.hash"])
     check("hash run", h.returncode == 0, h.stderr[-300:])
+    (tmp / "work.json").write_text(run(["bytecat.hash", "--emit-work", "tgthost"]).stdout)
+    (tmp / "results.ndjson").write_text(
+        run(["bytecat.scan", "--hash-list", str(tmp / "work.json")]).stdout)
+    i = run(["bytecat.hash", "--ingest", str(tmp / "results.ndjson")])
+    check("tgthost's files hashed there and ingested", i.returncode == 0, i.stderr[-300:])
 
     r = run(["bytecat.report_coverage", "--source-volume", "u-src", "--target-host", "tgthost"])
     check("coverage run", r.returncode == 0, r.stderr[-400:])

@@ -463,7 +463,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="bytecat scan" if __package__ else None,
         description="list files under each root as NDJSON for bytecat merge")
     ap.add_argument("roots", nargs="*", help="folders to list")
-    ap.add_argument("--host", default=platform.node().split(".")[0],
+    # BYTECAT_HOST, as db.this_host() reads it, so the tiers find this drive.
+    ap.add_argument("--host",
+                    default=os.environ.get("BYTECAT_HOST") or platform.node().split(".")[0],
                     help="host name to record (default: this machine's name)")
     ap.add_argument("--volume-uuid", default="",
                     help="set the volume ID (for network shares)")

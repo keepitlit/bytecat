@@ -38,7 +38,9 @@ def catalog(tmp, mode):
     home = tmp / f"home-{mode}"
     src = tmp / f"src-{mode}"
     seed(src)
-    env = dict(os.environ, BYTECAT_HOME=str(home), XDG_DATA_HOME=str(home))
+    # Scanned as --host h: the tiers read only this host's drives.
+    env = dict(os.environ, BYTECAT_HOME=str(home), XDG_DATA_HOME=str(home),
+               BYTECAT_HOST="h")
     s = subprocess.run([sys.executable, "-m", "bytecat.scan", str(src), "--host", "h",
                         "--volume-uuid", "u-1"], cwd=ROOT, env=env,
                        capture_output=True, text=True)

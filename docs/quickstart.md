@@ -5,8 +5,8 @@ no other machine, then checks that list against the disk.
 
 Every block below is real output from one run on synthetic files: a laptop, a NAS whose share
 is called `share`, and a USB drive called `OLD-USB` plugged into the laptop. The run was on
-one machine, so `--host laptop` and `--host nas` stand in for the two machines, and no model
-server was running. Paths under `~/demo` are the demo's own folders.
+one machine, so `BYTECAT_HOST=laptop` and `--host nas` stand in for the two machines, and no
+model server was running. Paths under `~/demo` are the demo's own folders.
 
 ## 1. Install
 
@@ -18,10 +18,11 @@ Python 3.9 or later is the only requirement for everything on this page. From a 
 can skip installing and type `python3 -m bytecat` wherever this page says `bytecat`.
 
 The catalog is one SQLite file in `~/.local/share/bytecat/`. To try bytecat on a throwaway
-catalog first, point `BYTECAT_HOME` somewhere else; the demo used `~/demo/bytecat-data`:
+catalog first, point `BYTECAT_HOME` somewhere else; the demo used `~/demo/bytecat-data`, and
+named its machine `laptop` with `BYTECAT_HOST`:
 
 ```text
-$ export BYTECAT_HOME=~/demo/bytecat-data
+$ export BYTECAT_HOME=~/demo/bytecat-data BYTECAT_HOST=laptop
 $ bytecat status
 no catalog at ~/demo/bytecat-data/catalog.db; start with: bytecat scan ~/Documents | bytecat merge
 ```
@@ -31,12 +32,12 @@ no catalog at ~/demo/bytecat-data/catalog.db; start with: bytecat scan ~/Documen
 `scan` lists files without opening them; `merge` stores the list in the catalog.
 
 ```text
-$ bytecat scan ~/demo/laptop --host laptop | bytecat merge
+$ bytecat scan ~/demo/laptop | bytecat merge
 [bytecat] scanned 11 files; 0 paths unreadable
 [bytecat] merged 11 files, 1 volume(s); 0 now missing; 0 paths unreadable
 ```
 
-On your own machine leave out `--host`; it defaults to the machine's name.
+On your own machine leave out `BYTECAT_HOST`; the host defaults to the machine's name.
 
 Scan the same folders each time they change. Several folders on one drive are fine: a
 rescan of one leaves the others as they were.
@@ -50,7 +51,7 @@ real Photos library needs Full Disk Access for your terminal.
 Plug it in and scan it from the machine it is plugged into:
 
 ```text
-$ bytecat scan /Volumes/OLD-USB --host laptop | bytecat merge
+$ bytecat scan /Volumes/OLD-USB | bytecat merge
 [bytecat] scanned 13 files; 0 paths unreadable
 [bytecat] merged 13 files, 1 volume(s); 0 now missing; 0 paths unreadable
 ```
@@ -109,8 +110,8 @@ $ bytecat hash --ingest results.ndjson
 [bytecat] ingested 12 hashes
 ```
 
-If the NAS's files are reachable on this machine at the path they were scanned from, skip
-this step: `bytecat hash` reads them directly.
+`bytecat hash` never reads another host's drive from this machine, even where the same path
+exists here, so this step is the only way the NAS's files get hashed.
 
 ## 6. Run the cheap tiers
 

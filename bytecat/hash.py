@@ -59,20 +59,23 @@ def _work(job: tuple[int, str, int, bool]) -> tuple[int, Optional[str], Optional
 # --------------------------------------------------------------------------
 
 def local_volumes(conn, only: Optional[list[int]] = None) -> dict[int, str]:
-    """Volumes whose mount point exists on THIS machine right now.
+    """This host's volumes that are mounted here right now.
 
     A volume that is offline (unplugged, or belongs to another host) is skipped
-    silently -- that is the normal case, not an error.
+    silently -- that is the normal case, not an error. Another host's drive is
+    skipped even when its scan path exists here: those files are not its bytes,
+    and --emit-work is how it gets hashed.
     """
     out: dict[int, str] = {}
+    here = db.this_host()
+    states = db.volume_states(conn)
     q = """SELECT v.id, v.uuid, v.last_mount, h.name AS host
            FROM volumes v JOIN hosts h ON h.id = v.host_id"""
     for r in conn.execute(q):
         if only and r["id"] not in only:
             continue
-        mount = r["last_mount"]
-        if mount and os.path.isdir(mount):
-            out[r["id"]] = mount
+        if r["host"] == here and states.get(r["id"]) == "online":
+            out[r["id"]] = r["last_mount"]
     return out
 
 

@@ -183,12 +183,15 @@ def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
 
 
 def unmounted_files(conn) -> int:
-    """Present files on volumes whose mount is not here; pending() skips them."""
+    """Present files on drives not mounted here, this host's or another's;
+    pending() skips them."""
+    here, states = db.this_host(), db.volume_states(conn)
     n = 0
-    for v in conn.execute("""SELECT v.last_mount, COUNT(f.id) AS n
+    for v in conn.execute("""SELECT v.id, h.name AS host, COUNT(f.id) AS n
                              FROM volumes v JOIN files f ON f.volume_id = v.id
+                             JOIN hosts h ON h.id = v.host_id
                              WHERE f.state = 'present' GROUP BY v.id"""):
-        if not (v["last_mount"] and os.path.isdir(v["last_mount"])):
+        if v["host"] != here or states.get(v["id"]) != "online":
             n += v["n"]
     return n
 

@@ -37,7 +37,7 @@ lists files as NDJSON on stdout and opens none of them; pipe it into `merge`.
 | flag | what it does |
 |---|---|
 | `roots` | Folders to list. Several on one drive are kept apart; a rescan of one leaves the others as they were. |
-| `--host HOST` | Host name to record. Default: this machine's name, up to the first dot. |
+| `--host HOST` | Host name to record. Default: `BYTECAT_HOST`, or this machine's name up to the first dot. |
 | `--volume-uuid ID` | Use this ID for the drive instead of detecting one. For network shares and other drives with no filesystem UUID. |
 | `--allow-marker` | When the drive has no ID, write `.bytecat-volume-id` at its root once and use it from then on. The only flag that makes `scan` write anything. |
 | `--include-hidden` | Also descend into folders whose names start with `.`. Hidden files in ordinary folders are listed either way. |
@@ -83,7 +83,8 @@ usage: bytecat hash [-h] [--volume VOLUME] [--workers WORKERS] [--limit LIMIT]
 ```
 
 Use it to find out which files are identical (tier 1). `pipeline` runs it for you. It reads
-every catalogued drive whose scan root exists on this machine. A file whose size no other
+every drive of this machine's that is mounted now; another host's drives are hashed on that
+host, with `--emit-work`, even if their path exists here. A file whose size no other
 file in the catalog shares is marked done without being read; files that share a size are
 hashed with BLAKE2b.
 
@@ -130,7 +131,8 @@ usage: bytecat extract [-h] [--limit LIMIT]
 
 Use it to record each file's kind (document, image, video ...) and, for images, video and
 audio, metadata from `exiftool` such as the date taken (tier 2). `ask --kind` depends on it.
-Without `exiftool` it warns once and records kinds only.
+Without `exiftool` it warns once and records kinds only. Like `hash`, it reads only
+this machine's drives that are mounted now.
 
 | flag | what it does |
 |---|---|
@@ -142,8 +144,9 @@ Without `exiftool` it warns once and records kinds only.
 usage: bytecat embed [-h] [--limit LIMIT] [--kinds KINDS] [--reset]
 ```
 
-Use it to make files findable by meaning (tier 3). Every file on a drive mounted here is
-embedded from its path and name, plus its text if it has any: plain-text, code and data files
+Use it to make files findable by meaning (tier 3). Every file on this machine's drives that
+are mounted now is embedded from its path and name, plus its text if it has any: plain-text,
+code and data files
 are read directly, and PDF, Office, iWork and e-book files go through `markitdown`. Audio and
 video are never sent to `markitdown`. The text is discarded after embedding. Needs a model
 server and Chroma on this machine; see the README.
@@ -341,6 +344,7 @@ recall@pool, attractor rate) against a fixed query set.
 | variable | default | used by |
 |---|---|---|
 | `BYTECAT_HOME` | `~/.local/share/bytecat` | everything: the catalog and `reports/` |
+| `BYTECAT_HOST` | this machine's name, up to the first dot | `scan --host`; the tiers read only drives of this host |
 | `BYTECAT_LLM_BASE` | `http://127.0.0.1:1234/v1` | `embed`, `enrich`, `ask`, `eval` |
 | `BYTECAT_EMBED_MODEL` | `text-embedding-nomic-embed-text-v1.5` | `embed`, `ask` |
 | `BYTECAT_CHAT_MODEL` | unset | `enrich`, `ask --smart`, `eval --smart` |

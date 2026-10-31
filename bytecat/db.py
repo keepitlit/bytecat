@@ -328,8 +328,13 @@ def resolve_volume(conn: sqlite3.Connection, value: str) -> list[int]:
 
 
 def this_host() -> str:
-    """The host name scan records by default for drives on this machine."""
-    return platform.node().split(".")[0]
+    """The host name scan records by default for drives on this machine.
+
+    BYTECAT_HOST overrides it, for a machine whose network name changes
+    (macOS renames itself on some networks): the tiers read only drives
+    catalogued under this name. scan.py reads the same variable.
+    """
+    return os.environ.get("BYTECAT_HOST") or platform.node().split(".")[0]
 
 
 def _volume_here(uuid: str, root: str, fs_uuid: str = "") -> bool:
@@ -466,10 +471,14 @@ def kind_for_ext(ext: str) -> str:
 
 def behind(tier_col: str) -> str:
     """WHERE clause, over `files f JOIN volumes v`, for files still behind on a
-    tier that the tier may open now: present, not a symlink, on a volume that
-    is online. An offline drive is skipped, never treated as deleted."""
-    return (f"f.{tier_col} = 0 AND f.state = 'present' "
-            "AND f.is_symlink = 0 AND v.state = 'online'")
+    tier that the tier may open now: present, not a symlink, on a volume of
+    this host's that is online. An offline drive is skipped, never treated as
+    deleted. Another host's drive is never opened here, even when its scan
+    path exists on this machine: the files there are not that drive's."""
+    host = this_host().replace("'", "''")
+    mine = f"SELECT id FROM hosts WHERE name = '{host}'"
+    return " AND ".join((f"f.{tier_col} = 0", "f.state = 'present'", "f.is_symlink = 0",
+                         "v.state = 'online'", f"v.host_id IN ({mine})"))
 
 
 def on_disk(rows: Iterable[sqlite3.Row]) -> Iterator[tuple[sqlite3.Row, str]]:

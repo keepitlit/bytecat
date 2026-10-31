@@ -187,8 +187,8 @@ python3 -m bytecat status
 
 ### Hashing a host you can't mount
 
-Full hashing needs the bytes, so it happens on the host that has them. This is
-demand-driven: a remote host only ever reads files that are genuinely
+Full hashing needs the bytes, so it happens on the host that has them: `hash` on
+this machine reads only drives scanned on this machine. This is demand-driven: a remote host only ever reads files that are genuinely
 duplicate candidates:
 
 ```sh
@@ -282,7 +282,8 @@ loaded`.** `enrich` and `ask --smart` need a chat model; set the variable to a m
 from your server's `/v1/models`.
 
 **`no catalogued volume is mounted here; remote hosts: --emit-work HOST`.** `hash` reads
-only drives whose scan root exists on this machine. Plug the drive in, or hash another
+only this machine's drives that are mounted now, under the host name `status` lists. If this
+machine's name has changed since the scan, set `BYTECAT_HOST` to the old one. Plug the drive in, or hash another
 host's files there (see "Hashing a host you can't mount").
 
 **`no volume 'X'; bytecat status lists them`, or `'X' matches 2 volumes`.** Drives are
