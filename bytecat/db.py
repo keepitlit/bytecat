@@ -63,10 +63,15 @@ def db_path() -> Path:
 
 def report_path(name: str, explicit: str = "") -> Path:
     """Where a report goes: `explicit` if given (--out), else a timestamped
-    file under data_home()/reports."""
+    file under data_home()/reports, never one that already exists."""
     if explicit:
         return Path(explicit)
-    return data_home() / "reports" / f"{name}-{datetime.now():%Y%m%d-%H%M}.md"
+    stem = data_home() / "reports" / f"{name}-{datetime.now():%Y%m%d-%H%M%S}"
+    p, n = stem.with_suffix(".md"), 1
+    while p.exists():
+        n += 1
+        p = stem.with_name(f"{stem.name}-{n}.md")
+    return p
 
 
 class NoCatalog(RuntimeError):

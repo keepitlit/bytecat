@@ -257,9 +257,6 @@ before you wipe the drive. The source drive never counts as its own copy. `--tar
 counts every drive ever scanned on that host, unplugged ones included; to count only
 particular drives, name each with `--target-volume`.
 
-Reports are named to the minute, so this run replaced the previous report; pass `--out` to
-keep both.
-
 ## 9. Check the answer against the disk
 
 `coverage` is computed from the catalog. Before you delete anything, `audit coverage` reads
