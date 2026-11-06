@@ -112,6 +112,75 @@ try:
 
     # Source files must all still exist.
     check("no source file removed", len(list((src).rglob("*.bin"))) == 6)
+
+    def scan_merge(root, uuid):
+        s = subprocess.run([sys.executable, "-m", "bytecat.scan", str(root),
+                            "--volume-uuid", uuid], cwd=ROOT, env=env,
+                           capture_output=True, text=True)
+        subprocess.run([sys.executable, "-m", "bytecat.merge"], cwd=ROOT, env=env,
+                       input=s.stdout, capture_output=True, text=True)
+
+    def report_body(r):
+        line = [l for l in r.stdout.splitlines() if "report written to" in l]
+        return Path(line[-1].split("report written to ", 1)[1]).read_text() if line else ""
+
+    # A file hash could not open is no proof it has no copy: it was never read.
+    if os.geteuid() == 0:
+        print("  SKIP  unreadable file checks (root reads everything)")
+    else:
+        src2 = tmp / "src2"
+        src2.mkdir()
+        # Same size, so tier 1 must open both; one of them it cannot.
+        (src2 / "locked.bin").write_bytes(b"L" * 5555)
+        (src2 / "twin.bin").write_bytes(b"T" * 5555)
+        (src2 / "locked.bin").chmod(0)
+        try:
+            scan_merge(src2, "u-src2")
+            run(["bytecat.hash"])
+            conn = db.connect(tmp / "home" / "catalog.db", readonly=True)
+            res2 = classify(conn, resolve_volumes(conn, ["u-src2"], [])[0],
+                            resolve_volumes(conn, [], ["tgthost"]))
+            conn.close()
+            why = {p: w for p, _, w in res2["missing_paths"]}
+            check("an unreadable file is not called unique",
+                  why.get("locked.bin") not in ("unique", "missing"), str(why))
+            r = run(["bytecat.report_coverage", "--source-volume", "u-src2",
+                     "--target-host", "tgthost"])
+            body = report_body(r)
+            check("it is listed as unreadable",
+                  "## Could not be read" in body and "| locked.bin | 5,555 | unreadable |" in body
+                  and "bytecat hash --volume u-src2 --forget" in body, body[-600:])
+        finally:
+            (src2 / "locked.bin").chmod(0o644)
+
+    # A copy on a target that is not plugged in now is not a confirmed copy.
+    usb = tmp / "usb"
+    usb.mkdir()
+    shutil.copy(src / "orphans" / "o0.bin", usb / "o0-copy.bin")
+    scan_merge(usb, "u-usb")
+    run(["bytecat.hash"])
+
+    # classify() runs in this process: it must judge mounts as srchost.
+    os.environ["BYTECAT_HOST"] = "srchost"
+
+    def o0_bucket():
+        conn = db.connect(tmp / "home" / "catalog.db", readonly=True)
+        res3 = classify(conn, resolve_volumes(conn, ["u-src"], [])[0],
+                        resolve_volumes(conn, ["u-usb"], []))
+        conn.close()
+        return {n: res3["buckets"][n].get("orphans", [0])[0] for n in res3["buckets"]}
+
+    got = o0_bucket()
+    check("a copy on a mounted target is counted present",
+          got.get("present") == 1, str(got))
+    shutil.move(str(usb), str(tmp / "usb-unplugged"))
+    got = o0_bucket()
+    check("a copy on an unmounted target is not counted present",
+          not got.get("present") and got.get("present_offline") == 1, str(got))
+    r = run(["bytecat.report_coverage", "--source-volume", "u-src", "--target-volume", "u-usb"])
+    body = report_body(r)
+    check("the report names the offline target and its last scan",
+          "## Only on an offline target" in body and "last scanned 20" in body, body[-600:])
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

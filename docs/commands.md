@@ -223,8 +223,13 @@ each file into one of:
 
 - **Not on any target**: the content is on no target. `hashed` means it was read and matched
   nothing; `by size` means no other file in the catalog has its size, so it was never read.
+- **Could not be read**: `hash` failed to open it, so no claim either way. The report gives
+  the `hash --volume DRIVE --forget` line that retries it.
+- **Only on an offline target**: the content is only on targets not mounted now, last seen
+  on the scan date the report gives; not a confirmed copy.
 - **Not hashed yet**: `hash` has not reached it; no claim either way.
-- **On a target (by content)**.
+- **On a target (by content)**: on a target that is mounted now, or another host's drive
+  its last scan found.
 
 ## Search
 

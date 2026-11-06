@@ -23,6 +23,7 @@ A <drive> is its UUID, its label or its mount, matched exactly.
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -65,23 +66,40 @@ def resolve_volumes(conn, values: list[str], hosts: list[str]) -> list[int]:
 def classify(conn, src_vol: int, targets: list[int]) -> dict:
     """Bucket every present file on the source volume.
 
-    present  -- its blob has a present file row on a target volume
+    present  -- its blob has a present file row on a target volume that is
+                online now
+    present_offline -- its content is only on targets that are offline now
+                (unplugged, or another host's drive its last scan left
+                offline): last seen there, not confirmed
     missing  -- fully hashed, and no target holds that content
     unique   -- tier 1 proved its size unique, so it CANNOT be on a target.
                 A real miss, but recorded separately: it was never read, so we
                 hold no fingerprint of it.
+    unreadable -- tier 1 tried to read it and failed (a permission error, a
+                bad sector): no claim either way, `hash --forget` retries it
     unhashed -- tier 1 has not reached it yet; no claim either way
     """
-    ph = ",".join("?" * len(targets))
+    states = db.volume_states(conn)
+    online = [t for t in targets if states.get(t) == "online"]
+    offline = [t for t in targets if states.get(t) != "online"]
+
+    # SQLite takes an empty IN (), which matches nothing.
+    on_ph, off_ph = ",".join("?" * len(online)), ",".join("?" * len(offline))
     rows = conn.execute(
         f"""SELECT f.relpath, f.size_bytes, f.blob_id, f.t1_hashed,
                    EXISTS (SELECT 1 FROM files g
                            WHERE g.blob_id = f.blob_id
-                             AND g.volume_id IN ({ph})
-                             AND g.state = 'present') AS on_target
+                             AND g.volume_id IN ({on_ph})
+                             AND g.state = 'present') AS on_target,
+                   EXISTS (SELECT 1 FROM files g
+                           WHERE g.blob_id = f.blob_id
+                             AND g.volume_id IN ({off_ph})
+                             AND g.state = 'present') AS on_offline,
+                   EXISTS (SELECT 1 FROM errors x
+                           WHERE x.file_id = f.id AND x.stage = 'hash') AS unreadable
               FROM files f
              WHERE f.volume_id = ? AND f.state = 'present'""",
-        (*targets, src_vol),
+        (*online, *offline, src_vol),
     )
 
     buckets = defaultdict(lambda: defaultdict(lambda: [0, 0]))
@@ -90,17 +108,29 @@ def classify(conn, src_vol: int, targets: list[int]) -> dict:
         if r["t1_hashed"] == 0:
             b = "unhashed"
         elif r["blob_id"] is None:
-            b = "unique"
+            b = "unreadable" if r["unreadable"] else "unique"
         elif r["on_target"]:
             b = "present"
+        elif r["on_offline"]:
+            b = "present_offline"
         else:
             b = "missing"
         agg = buckets[b][top_level(r["relpath"])]
         agg[0] += 1
         agg[1] += r["size_bytes"]
-        if b in ("missing", "unique"):
+        if b in ("missing", "unique", "unreadable"):
             missing_paths.append((r["relpath"], r["size_bytes"], b))
-    return {"buckets": buckets, "missing_paths": missing_paths}
+    return {"buckets": buckets, "missing_paths": missing_paths, "offline": offline}
+
+
+def last_scans(conn, vol_ids: list[int]) -> list[str]:
+    """'<drive>, last scanned <date>' for each volume, as the report names it."""
+    out = []
+    for v in vol_ids:
+        r = conn.execute("SELECT last_scan FROM volumes WHERE id = ?", (v,)).fetchone()
+        when = (r["last_scan"] or "never")[:10] if r else "never"
+        out.append(f"{drive(conn, v, with_uuid=True)}, last scanned {when}")
+    return out
 
 
 def drive(conn, vol_id: int, *, with_uuid: bool) -> str:
@@ -114,7 +144,8 @@ def drive(conn, vol_id: int, *, with_uuid: bool) -> str:
     return f"{v['host']} {name or v['uuid']}"
 
 
-def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
+def write_report(res: dict, out: Path, src_label: str, tgt_label: str,
+                 offline_labels: list[str] = (), src_value: str = "") -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     b = res["buckets"]
 
@@ -146,15 +177,23 @@ def write_report(res: dict, out: Path, src_label: str, tgt_label: str) -> None:
         # shows, because its 0 is the verdict; the rest only when above 0.
         section(fh, "Not on any target", merged("missing", "unique"), always=True)
         section(fh, "Of which never read (unique size)", merged("unique"))
+        section(fh, "Could not be read", merged("unreadable"))
+        if b.get("unreadable"):
+            # The one thing to do: --forget clears the logged read error.
+            fh.write(f"To retry: `bytecat hash --volume {shlex.quote(src_value)} --forget`\n\n")
         if res["missing_paths"]:
-            fh.write("## Every file not on a target\n\n")
+            fh.write("## Every file not on a target or not read\n\n")
             fh.write("| Path | Bytes | Why |\n|---|---:|---|\n")
-            why_words = {"missing": "hashed", "unique": "by size"}
+            why_words = {"missing": "hashed", "unique": "by size",
+                         "unreadable": "unreadable"}
             for p, s, why in sorted(res["missing_paths"], key=lambda x: -x[1]):
                 # A '|' in a name would split the row and shift the Why column.
                 cell = p.replace("|", "\\|")
                 fh.write(f"| {cell} | {s:,} | {why_words.get(why, why)} |\n")
             fh.write("\n")
+        section(fh, "Only on an offline target", merged("present_offline"))
+        if b.get("present_offline"):
+            fh.write("".join(f"- {x}\n" for x in offline_labels) + "\n")
         section(fh, "Not hashed yet", merged("unhashed"))
         section(fh, "On a target (by content)", merged("present"))
 
@@ -187,7 +226,8 @@ def main() -> int:
     res = classify(conn, src[0], targets)
     out = db.report_path("coverage", args.out)
     write_report(res, out, drive(conn, src[0], with_uuid=True),
-                 ", ".join(drive(conn, t, with_uuid=True) for t in targets))
+                 ", ".join(drive(conn, t, with_uuid=True) for t in targets),
+                 last_scans(conn, res["offline"]), args.source_volume)
 
     # The answer first: what is not on a target, then what has no claim yet.
     b = res["buckets"]
@@ -196,6 +236,10 @@ def main() -> int:
         return sum(v[0] for v in rows), sum(v[1] for v in rows)
     lines = [("not on target", total("missing", "unique")),
              ("  of which never read", total("unique"))]
+    if total("unreadable")[0]:
+        lines.append(("could not be read", total("unreadable")))
+    if total("present_offline")[0]:
+        lines.append(("on offline target", total("present_offline")))
     if total("unhashed")[0]:
         lines.append(("not hashed yet", total("unhashed")))
     lines.append(("on target", total("present")))
