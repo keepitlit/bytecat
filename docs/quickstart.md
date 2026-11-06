@@ -77,8 +77,9 @@ $ python3 ~/demo/scan.py ~/demo/nas --host nas | bytecat merge
 [bytecat] merged 12 files, 1 volume(s); 0 now missing; 0 paths unreadable
 ```
 
-A network share or a pooled array such as Unraid's `/mnt/user` has no filesystem UUID, so
-it is identified by host name and mount point, which is stable as long as neither changes.
+A network share is identified by its server and share name, wherever it is mounted. A pooled
+array such as Unraid's `/mnt/user`, scanned on the NAS itself, has no filesystem UUID, so it
+is identified by host name and mount point, which is stable as long as neither changes.
 Pass `--volume-uuid <any name>` to pin it, or `--allow-marker` to write a small
 `.bytecat-volume-id` file at its root, the one exception to `scan` being read-only. The
 demo's NAS folder is a disk image, so it has a UUID of its own.

@@ -7,7 +7,7 @@
 - A drive scanned with --volume-uuid on this machine reads online while it
   is mounted, though the drive itself reports a different ID.
 """
-import io, json, os, platform, shutil, subprocess, sys, tempfile
+import contextlib, io, json, os, platform, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -87,6 +87,66 @@ try:
     finally:
         scan.platform.system = real_system
         scan.MOUNTINFO, scan.BY_UUID = real_tables
+
+    print("\n[a network share keeps its ID wherever it is mounted]")
+    # mount_point is faked so each folder reads as its own mount.
+    real_mp, real_system, real_diskutil = (scan.mount_point, platform.system,
+                                           scan.macos_volume_info)
+    real_tables = scan.MOUNTINFO, scan.BY_UUID, getattr(scan, "MOUNT_CMD", None)
+    try:
+        scan.mount_point = lambda p: os.path.abspath(p)
+        scan.BY_UUID = str(tmp / "no-such-dir")
+        here, there = tmp / "mnt" / "photos", tmp / "media" / "Photos 2"
+        here.mkdir(parents=True)
+        there.mkdir(parents=True)
+
+        def linux_share(mp, line_src="//NAS.local/Photos", fs="cifs"):
+            (tmp / "mi").write_text(
+                f"40 1 0:50 / {str(mp).replace(' ', chr(92) + '040')} rw - {fs} "
+                f"{line_src} rw,vers=3.0\n")
+            scan.MOUNTINFO = str(tmp / "mi")
+            return scan.volume_identity(str(mp))
+
+        scan.platform.system = lambda: "Linux"
+        a = linux_share(here)
+        b = linux_share(there, "//alex@nas.local/photos/")
+        check("a CIFS share remounted at another path keeps its ID",
+              a["uuid"] == b["uuid"] == "share://nas.local/photos", f"{a} {b}")
+        check("and names the synthetic ID an older scan gave it",
+              f"synthetic:{platform.node()}:{here}" in a.get("aliases", []), str(a))
+        n1 = linux_share(here, "nas:/export/media/", "nfs4")
+        n2 = linux_share(there, "nas:/export/media", "nfs4")
+        check("an NFS export keeps its ID too",
+              n1["uuid"] == n2["uuid"] == "share:nas:/export/media", f"{n1} {n2}")
+
+        scan.platform.system = lambda: "Darwin"
+        scan.macos_volume_info = lambda mp: {}  # a share has no disk UUID
+        table = (f"/dev/disk3s1 on / (apfs, local)\n"
+                 f"//alex@NAS.local/Photos on {there} (smbfs, nodev, nosuid)\n")
+        scan.MOUNT_CMD = [sys.executable, "-c", f"print({table!r}, end='')"]
+        m = scan.volume_identity(str(there))
+        check("macOS reads the share from mount",
+              m["uuid"] == "share://nas.local/photos", str(m))
+
+        print("\n[a drive with no stable ID says so]")
+        scan.platform.system = lambda: "Linux"
+        (tmp / "mi").write_text("")
+        scan.MOUNTINFO = str(tmp / "mi")
+        err, out = io.StringIO(), io.StringIO()
+        real_argv = sys.argv
+        sys.argv = ["scan.py", str(here)]
+        try:
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+                scan.main()
+        finally:
+            sys.argv = real_argv
+        check("the synthetic fallback names --volume-uuid and --allow-marker",
+              "--volume-uuid" in err.getvalue() and "--allow-marker" in err.getvalue(),
+              err.getvalue())
+    finally:
+        scan.mount_point, scan.platform.system = real_mp, real_system
+        scan.macos_volume_info = real_diskutil
+        scan.MOUNTINFO, scan.BY_UUID, scan.MOUNT_CMD = real_tables
 
     print("\n[--volume-uuid on a drive mounted here reads online]")
     src = tmp / "forced"

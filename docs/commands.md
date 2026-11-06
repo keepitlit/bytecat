@@ -50,9 +50,12 @@ lists files as NDJSON on stdout and opens none of them; pipe it into `merge`.
 
 How a drive is identified, in order: `--volume-uuid`; the filesystem UUID (from `diskutil`
 on macOS, `/dev/disk/by-uuid` on Linux); a `.bytecat-volume-id` marker at the drive root;
-otherwise `synthetic:<host>:<mount point>`, which changes if the drive mounts somewhere else.
-A Linux drive catalogued under a marker or synthetic ID before UUIDs were read keeps its
-files when it is next scanned.
+a network share's own name from the mount table, `share://server/share` for SMB or
+`share:server:/export` for NFS and sshfs; otherwise `synthetic:<host>:<mount point>`, which
+changes if the drive mounts somewhere else, and `scan` says so.
+A Linux drive catalogued under a marker or synthetic ID before UUIDs were read, or a share
+catalogued under a synthetic ID before share names were read, keeps its files when it is next
+scanned.
 
 Always skipped: build and package folders (`node_modules`, `.git`, `target`, `venv` ...),
 OS scratch (`.Trashes`, `.Spotlight-V100`, `System Volume Information` ...), `.DS_Store`,

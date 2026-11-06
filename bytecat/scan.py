@@ -175,6 +175,64 @@ def linux_volume_info(mp: str) -> dict:
     return {}
 
 
+# Network filesystems by the type the mount table gives them. Their source
+# names the share, which stays the same wherever it is mounted.
+NETWORK_FS = {"cifs", "smb3", "smbfs", "nfs", "nfs4", "afpfs", "webdav",
+              "fuse.sshfs", "sshfs", "macfuse", "osxfuse"}
+MOUNT_CMD = ["mount"]  # macOS mount table; a test can point it at a fake
+
+
+def _mount_source(mp: str) -> tuple[str, str]:
+    """(fs_type, source) of the mount at `mp`, from the OS mount table."""
+    if platform.system() == "Linux":
+        try:
+            with open(MOUNTINFO) as fh:
+                for line in fh:
+                    head, sep, tail = line.partition(" - ")
+                    f, t = head.split(), tail.split()
+                    if sep and len(f) >= 5 and len(t) >= 2 and _unescape(f[4]) == mp:
+                        return t[0], _unescape(t[1])
+        except OSError:
+            pass
+        return "", ""
+    try:
+        out = subprocess.run(MOUNT_CMD, capture_output=True, timeout=15,
+                             text=True).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return "", ""
+    for line in out.splitlines():
+        m = re.match(r"^(.*?) on (.*) \(([^,)]+)", line)
+        if m and m.group(2) == mp:
+            return m.group(3).strip(), m.group(1)
+    return "", ""
+
+
+def network_share_id(mp: str) -> tuple[str, str]:
+    """("share:<server and share>", fs_type) for a network mount, else ("", "").
+
+    The ID is the share's own name, normalised so the same share reads the
+    same however it is mounted: no user, lowercase server, no trailing slash.
+    SMB share names are case-insensitive, so they are lowercased too; an NFS
+    or sshfs path is not. macOS writes an SMB source URL-encoded.
+    """
+    from urllib.parse import unquote
+
+    fs_type, source = _mount_source(mp)
+    if fs_type not in NETWORK_FS or not source:
+        return "", ""
+    if source.startswith("//"):
+        server, _, share = unquote(source[2:]).partition("/")
+        server = server.rpartition("@")[2].lower()
+        share = share.strip("/").lower()
+        return (f"share://{server}/{share}", fs_type) if server and share else ("", "")
+    host, sep, path = source.partition(":")
+    if not sep or not host:
+        return "", ""
+    host = host.rpartition("@")[2].lower()
+    path = path.rstrip("/") or "/"
+    return f"share:{host}:{path}", fs_type
+
+
 def read_marker(mp: str) -> str:
     try:
         with open(os.path.join(mp, MARKER)) as fh:
@@ -188,7 +246,8 @@ def volume_identity(root: str, forced: str = "", allow_marker: bool = False) -> 
 
     Identity precedence: explicit --volume-uuid, then a real filesystem UUID
     (diskutil on macOS, /dev/disk/by-uuid on Linux), then a marker file at the
-    mount point, then a synthetic fallback.
+    mount point, then a network share's own name (share:...), then a
+    synthetic fallback.
 
     Mount points are never used as identity -- a drive that remounts at
     "/Volumes/Backup 1" must not read as a second, duplicate volume.
@@ -210,12 +269,17 @@ def volume_identity(root: str, forced: str = "", allow_marker: bool = False) -> 
 
     marker = read_marker(mp)
     # Last resort: stable for this host+mount, but not across remounts
-    # at a different path. Prefer --allow-marker for network shares.
+    # at a different path.
     synthetic = f"synthetic:{platform.node()}:{mp}"
+    share = ("", "") if info["uuid"] or marker else network_share_id(mp)
     if info["uuid"]:
         info["aliases"] = [a for a in (marker, synthetic) if a]
     elif marker:
         info["uuid"] = marker
+    elif share[0]:
+        # A share catalogued under its synthetic ID keeps its history.
+        info.update(uuid=share[0], fs_type=info["fs_type"] or share[1],
+                    aliases=[synthetic])
     elif allow_marker and not forced:
         marker_path = os.path.join(mp, MARKER)
         new = str(uuidlib.uuid4())
@@ -503,6 +567,11 @@ def main() -> int:
             continue
 
         vol = volume_identity(root, args.volume_uuid, args.allow_marker)
+        if vol["uuid"].startswith("synthetic:"):
+            # Tied to this host and mount path: a remount elsewhere reads as a
+            # new drive and every file as its own duplicate.
+            eprint(f"[bytecat] no stable ID for {mount_point(root)}; "
+                   "rescan with --volume-uuid ID or --allow-marker")
         print(json.dumps({
             "type": "volume",
             "host": args.host,

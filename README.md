@@ -155,8 +155,9 @@ scp bytecat/scan.py nas:/tmp/
 ssh nas 'python3 /tmp/scan.py /mnt/user --host nas' | python3 -m bytecat merge
 
 # an external drive: its identity is the filesystem UUID, not the mount
-# point, so it survives remounting at "/Volumes/Backup 1". A share with no
-# UUID needs --allow-marker the first time, or it is identified by its mount point.
+# point, so it survives remounting at "/Volumes/Backup 1". A network share is
+# identified by its server and share name. Any other drive with no UUID needs
+# --allow-marker the first time, or it is identified by its mount point.
 python3 -m bytecat scan /Volumes/Backup | python3 -m bytecat merge
 
 # 2. the cheap tiers (hash + metadata + vectors)
