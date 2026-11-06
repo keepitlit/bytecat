@@ -208,6 +208,39 @@ try:
           (d / "a.bin").exists() and (d / "unseen.bin").exists()
           and (src / "gone.bin").exists() and (tgt / "corrupt.bin").exists())
     check("audit names the outside check", "hashdeep -a -k" in rep, rep[-400:])
+
+    # ------------------------------------------- which volume a path is on
+    # audit's verdict must rest on the claim for the drive at this path on
+    # this host: not another host's drive once mounted at the same place, and
+    # never the first of two rows that tie.
+    print("\n[audit resolves a path to this host's volume]")
+    home2 = tmp / "home2"
+    shared, tgt2 = tmp / "shared", tmp / "tgt2"
+    shared.mkdir()
+    tgt2.mkdir()
+    (shared / "x.bin").write_bytes(os.urandom(3000))
+    (tgt2 / "x.bin").write_bytes((shared / "x.bin").read_bytes())
+    env2 = dict(env_for(home2))
+    s = subprocess.run([sys.executable, "-m", "bytecat.scan", str(shared), "--host",
+                        "elsewhere", "--volume-uuid", "u-elsewhere"], cwd=ROOT, env=env2,
+                       capture_output=True, text=True)
+    subprocess.run([sys.executable, "-m", "bytecat.merge"], cwd=ROOT, env=env2,
+                   input=s.stdout, capture_output=True, text=True)
+    ingest(home2, shared, "u-mine")
+    ingest(home2, tgt2, "u-tgt2")
+    hash_all(home2)
+    rc, out, err, rep = audit(home2, "coverage", "--source", str(shared),
+                              "--target", str(tgt2))
+    check("audit picks this host's volume",
+          "Source: u-mine:" in rep and "u-elsewhere" not in rep,
+          (rep[:300] or out + err[-300:]))
+
+    ingest(home2, shared, "u-mine-2")
+    rc, out, err, rep = audit(home2, "coverage", "--source", str(shared),
+                              "--target", str(tgt2))
+    check("two of this host's volumes at one mount are refused, not guessed",
+          rc != 0 and "u-mine" in err and "u-mine-2" in err and not rep,
+          f"rc={rc} " + out[-300:] + err[-300:])
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -268,19 +268,40 @@ class Scope:
 
 
 def resolve_scope(conn, path: str) -> Scope:
-    """Longest-mount-prefix match: which volume does this path live on?"""
+    """Which of this host's catalogued volumes does this path live on?
+
+    Only this host's volumes: a path on this machine says nothing about another
+    host's drive that was once mounted at the same place. Among them, a drive
+    that is mounted here now wins over one that only has the same last mount,
+    then the longest mount prefix. A tie that remains is refused with the
+    candidates, as db.resolve_volume does: audit's verdict must rest on the
+    claim for this drive, never on the first row that happened to match.
+    db._volume_here re-derives identity to pick the claim; it plays no part in
+    the measurement, so the independence contract above still holds.
+    """
     root = os.path.abspath(path)
     if not os.path.isdir(root):
         sys.exit(f"[bytecat] not a directory: {root}")
-    best = None
-    for r in conn.execute("SELECT id, uuid, last_mount FROM volumes"):
+    cands = []
+    for r in conn.execute(
+            "SELECT v.id, v.uuid, v.fs_uuid, v.last_mount FROM volumes v "
+            "JOIN hosts h ON h.id = v.host_id WHERE h.name = ?", (db.this_host(),)):
         m = r["last_mount"]
         if not m:
             continue
         m = os.path.abspath(m)
         if root == m or root.startswith(m.rstrip("/") + "/"):
-            if best is None or len(m) > len(best[2]):
-                best = (r["id"], r["uuid"], m)
+            cands.append((r["id"], r["uuid"], m, r["fs_uuid"] or ""))
+    here = [c for c in cands if db._volume_here(c[1], c[2], c[3])]
+    pool = here or cands
+    longest = max((len(c[2]) for c in pool), default=-1)
+    tied = [c for c in pool if len(c[2]) == longest]
+    if len(tied) > 1:
+        print(f"[bytecat] {root} matches {len(tied)} volumes:", file=sys.stderr)
+        for c in tied:
+            print(f"  {c[2]}  {c[1]}", file=sys.stderr)
+        sys.exit("[bytecat] remove the stale one: bytecat forget --volume <UUID>")
+    best = tied[0][:3] if tied else None
     if best is None:
         # audit can only cross-check a claim the catalog already holds. <path>
         # stays a placeholder: scanning the given path itself, when its drive is
