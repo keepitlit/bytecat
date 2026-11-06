@@ -11,7 +11,7 @@ an error rather than degrading to anything remote.
 Usage:
     embed.py --limit 500
     embed.py --kinds document          # documents only
-    embed.py --reset                   # rebuild vectors from scratch
+    embed.py --reset                   # rebuild this machine's mounted vectors
 """
 
 from __future__ import annotations
@@ -71,13 +71,19 @@ def build_text(path: str, name: str, relpath: str, ext: str, size: int,
     return text if text.strip() else None
 
 
-def pending(conn, kinds: Optional[list[str]], limit: int) -> list[dict]:
+def pending(conn, kinds: Optional[list[str]], limit: int, *,
+            embedded_too: bool = False) -> list[dict]:
+    """Files embed may open now. With embedded_too, the ones already embedded
+    as well: the set `--reset` clears, because this run can rebuild it."""
+    where = db.behind("t3_embedded")
+    if embedded_too:
+        where = where.replace("f.t3_embedded = 0 AND ", "", 1)
     q = """SELECT f.id, f.relpath, f.name, f.ext, f.size_bytes,
                   v.last_mount, e.title, e.gist, e.category, e.kind
            FROM files f
            JOIN volumes v ON v.id = f.volume_id
            LEFT JOIN extractions e ON e.file_id = f.id
-           WHERE """ + db.behind("t3_embedded")
+           WHERE """ + where
     params: list = []
     if kinds:
         q += f" AND COALESCE(e.kind, 'other') IN ({','.join('?' * len(kinds))})"
@@ -94,13 +100,38 @@ def pending(conn, kinds: Optional[list[str]], limit: int) -> list[dict]:
     } for r, p in db.on_disk(conn.execute(q, params))]
 
 
-def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0) -> dict:
+def preflight() -> tuple[ModelServer, Chroma]:
+    """Both servers, checked; raises the line to print when either is down."""
     lm = ModelServer()
     lm.ensure_up()
     chroma = Chroma()
     if not chroma.heartbeat():
         raise RuntimeError(f"Chroma not reachable at {chroma.base}; "
                            f"start it or set BYTECAT_CHROMA_BASE")
+    return lm, chroma
+
+
+def reset(conn, chroma: Chroma, kinds: Optional[list[str]] = None) -> int:
+    """Clear the vectors this run can rebuild; return how many files.
+
+    Only this host's present files on drives mounted now (of --kinds, if
+    given) lose their vector and flag. Another host's drive, or one unplugged,
+    cannot be re-read here, so its vectors stay. A vector whose catalog row is
+    gone (forget) is deleted too: ask already ignores it.
+    """
+    ids = [r["id"] for r in pending(conn, kinds, 0, embedded_too=True)]
+    known = {str(r[0]) for r in conn.execute("SELECT id FROM files")}
+    orphans = [i for i in chroma.ids() if i not in known]
+    chroma.delete([str(i) for i in ids] + orphans)
+    with db.transaction(conn):
+        for i in ids:
+            conn.execute("UPDATE files SET t3_embedded = 0 WHERE id = ?", (i,))
+    return len(ids)
+
+
+def run(conn, *, kinds: Optional[list[str]] = None, limit: int = 0,
+        servers: Optional[tuple[ModelServer, Chroma]] = None) -> dict:
+    lm, chroma = servers or preflight()
 
     rows = pending(conn, kinds, limit)
     stats = {"seen": len(rows), "embedded": 0, "skipped": 0, "errors": 0}
@@ -203,20 +234,26 @@ def main() -> int:
     ap.add_argument("--kinds", default="",
                     help="only these kinds, comma-separated (document,image,...)")
     ap.add_argument("--reset", action="store_true",
-                    help="delete all vectors, then re-embed files on mounted volumes")
+                    help="rebuild the vectors of files on drives mounted here")
     args = ap.parse_args()
+    if args.reset and args.limit:
+        # A reset clears every vector it can rebuild; a limited run would
+        # leave the rest cleared and unbuilt until the next full run.
+        ap.error("--reset embeds every file it clears; drop --limit")
 
+    kinds = [k for k in args.kinds.split(",") if k] or None
     conn = db.open_catalog()
     try:
+        # Both servers before anything is deleted: a reset with either down
+        # would clear vectors that this run then cannot rebuild.
+        servers = preflight()
         if args.reset:
-            Chroma().delete_collection()
-            conn.execute("UPDATE files SET t3_embedded = 0")
-            n = unmounted_files(conn)
-            left = f"; {n:,} files on unmounted volumes not re-embedded" if n else ""
-            print(f"[bytecat] vectors cleared{left}")
+            n = reset(conn, servers[1], kinds)
+            off = unmounted_files(conn)
+            kept = f"; {off:,} on unmounted drives left as they are" if off else ""
+            print(f"[bytecat] vectors cleared for {n:,} files{kept}")
 
-        s = run(conn, kinds=[k for k in args.kinds.split(",") if k] or None,
-                limit=args.limit)
+        s = run(conn, kinds=kinds, limit=args.limit, servers=servers)
     except RuntimeError as e:
         # ModelServerDown, LocalOnlyError and the Chroma errors each name what
         # failed and what to do; print that line instead of a traceback. The

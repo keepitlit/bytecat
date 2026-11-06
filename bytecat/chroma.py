@@ -5,8 +5,8 @@ server already runs on :8100, and the same local-only invariant applies here as
 to the model endpoint.
 
 Chroma holds vectors and a little metadata for filtering. It is derived state --
-if this server disappears, `bytecat embed --reset` rebuilds it from the catalog,
-for files on volumes mounted at the time.
+if this server disappears, `bytecat embed` rebuilds it from the catalog, for
+files on volumes mounted at the time.
 """
 
 from __future__ import annotations
@@ -123,6 +123,27 @@ class Chroma:
         cid = self.collection_id()
         return self._req("GET", f"{self._root}/{cid}/count") or 0
 
+    def ids(self, page: int = 1000) -> list[str]:
+        """Every id in the collection, paged so a big one is not one reply."""
+        cid = self.collection_id()
+        out: list[str] = []
+        while True:
+            got = self._req("POST", f"{self._root}/{cid}/get", {
+                "include": [], "limit": page, "offset": len(out),
+            }) or {}
+            batch = got.get("ids") or []
+            out += batch
+            if len(batch) < page:
+                return out
+
+    def delete(self, ids: list[str], page: int = 1000) -> None:
+        """Delete these vectors; ids not in the collection are ignored."""
+        cid = self.collection_id()
+        for i in range(0, len(ids), page):
+            self._req("POST", f"{self._root}/{cid}/delete", {"ids": ids[i:i + page]})
+
     def delete_collection(self) -> None:
+        """Drop the whole collection. The test suite cleans up with it;
+        `embed --reset` deletes by id instead, so vectors it cannot rebuild stay."""
         self._req("DELETE", f"{self._root}/{self.collection_name}")
         self._id = None

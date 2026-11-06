@@ -157,7 +157,7 @@ server and Chroma on this machine; see the README.
 |---|---|
 | `--limit N` | Embed at most N files this run. |
 | `--kinds KINDS` | Only these kinds, comma-separated: `archive,audio,bundle,code,data,document,image,other,video`. |
-| `--reset` | Delete every vector in the collection, then re-embed files on drives mounted now. |
+| `--reset` | Delete and rebuild the vectors of this machine's files on drives mounted now. Checks both servers first; not with `--limit`. |
 
 ### enrich
 
@@ -337,9 +337,10 @@ Use it when files may have changed without their modification time changing (`rs
 
 ### Rebuilding search vectors: `embed --reset`
 
-`bytecat embed --reset` empties the Chroma collection and re-embeds files on drives mounted
-now. Files on other drives stay findable by keyword until their drive is mounted and
-`embed` runs again.
+`bytecat embed --reset` deletes and rebuilds the vectors of this machine's files on drives
+mounted now (of `--kinds`, if given), and deletes vectors whose file was forgotten. It checks
+the model server and Chroma first, so with either down nothing is deleted. Another host's
+drives and unplugged ones keep their vectors, since they cannot be re-read here.
 
 ### eval
 
