@@ -15,7 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.9", "3.13"]
+        python: ["3.13"]
+        include:
+          # 3.9 is the floor pyproject promises. setup-python has no 3.9
+          # build for ubuntu-latest (26.04), so Linux tests it on 24.04.
+          - { os: ubuntu-24.04, python: "3.9" }
+          - { os: macos-latest, python: "3.9" }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
