@@ -92,9 +92,12 @@ def connect(path: Optional[Path] = None, *, readonly: bool = False) -> sqlite3.C
         if not p.exists():
             raise NoCatalog(
                 f"no catalog at {p}; start with: bytecat scan ~/Documents | bytecat merge")
+        _upgrade(p)
         conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=30.0)
     else:
         conn = sqlite3.connect(p, timeout=60.0, isolation_level=None)
+        if _has_table(conn, "volumes"):
+            _migrate_columns(conn)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if not readonly:
@@ -128,6 +131,26 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute(fts_ddl())
     _migrate_columns(conn)
     _migrate_fts(conn)
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        (name,)).fetchone() is not None
+
+
+def _upgrade(p: Path) -> None:
+    """Add missing columns to a catalog made by an older bytecat, so the
+    read-only paths (status, ask, the reports) can query them. A catalog that
+    cannot be written is left as it is."""
+    try:
+        conn = sqlite3.connect(p, timeout=30.0, isolation_level=None)
+        try:
+            if _has_table(conn, "volumes"):
+                _migrate_columns(conn)
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        pass
 
 
 def _migrate_columns(conn: sqlite3.Connection) -> None:

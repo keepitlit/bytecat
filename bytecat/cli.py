@@ -87,7 +87,7 @@ def cmd_status(args) -> int:
         scanned = local_time(v["last_scan"])[:10]
         offline = "  offline" if states.get(v["id"]) == "offline" else ""
         print(f"  {v['last_mount'] or '-'}{label}  {v['uuid']}  "
-              f"{v['n']:,} files  scanned {scanned}{offline}")
+              f"{v['n']:,} file{'' if v['n'] == 1 else 's'}  scanned {scanned}{offline}")
     print()
     print("progress:")
     # Each row is named after the command that advances it.
